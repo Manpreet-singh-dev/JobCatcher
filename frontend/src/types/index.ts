@@ -83,6 +83,9 @@ export interface JobFilters {
   sort_order?: "asc" | "desc";
   page?: number;
   per_page?: number;
+  page_size?: number;
+  /** When true, backend applies saved profile preferences to the job list. */
+  apply_preferences?: boolean;
 }
 
 export type ApplicationStatus =

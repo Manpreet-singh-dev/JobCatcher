@@ -54,7 +54,7 @@ function Sidebar({ className }: SidebarProps) {
             <div className="flex h-8 w-8 items-center justify-center rounded-md gradient-primary">
               <Sparkles className="h-4 w-4 text-white" />
             </div>
-            <span className="text-lg font-bold gradient-text-primary">ApplyIQ</span>
+            <span className="text-lg font-bold gradient-text-primary">JobCatcher</span>
           </Link>
         )}
         {sidebarCollapsed && (

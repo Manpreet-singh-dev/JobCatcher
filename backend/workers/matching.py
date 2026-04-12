@@ -28,8 +28,8 @@ Required Skills: {required_skills}
 
 Return ONLY valid JSON. No explanations."""
 
-JOB_QUEUE_KEY = "applyiq:jobs:{user_id}"
-DAILY_COUNT_KEY = "applyiq:daily_apps:{user_id}"
+JOB_QUEUE_KEY = "jobcatcher:jobs:{user_id}"
+DAILY_COUNT_KEY = "jobcatcher:daily_apps:{user_id}"
 
 
 def _matches_work_mode(job: dict[str, Any], preferences) -> bool:

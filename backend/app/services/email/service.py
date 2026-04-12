@@ -41,7 +41,7 @@ class EmailService:
 
         try:
             message = Mail(
-                from_email=Email(settings.FROM_EMAIL, "ApplyIQ"),
+                from_email=Email(settings.FROM_EMAIL, "JobCatcher"),
                 to_emails=To(to_email),
                 subject=subject,
                 html_content=Content("text/html", html_content),
@@ -96,7 +96,7 @@ class EmailService:
             return f"""{base_style}
             <h2 style="color: #2563eb;">New Application Ready for Review</h2>
             <p>Hi {context.get('user_name', 'there')},</p>
-            <p>ApplyIQ found a matching job for you:</p>
+            <p>JobCatcher found a matching job for you:</p>
             <div style="background: #f8fafc; padding: 16px; border-radius: 8px; margin: 16px 0;">
                 <h3 style="margin: 0 0 8px 0;">{context.get('job_title', 'N/A')}</h3>
                 <p style="margin: 0; color: #64748b;">{context.get('company', 'N/A')} • {context.get('location', 'N/A')}</p>
@@ -225,7 +225,7 @@ class EmailService:
         })
 
         html = self._render_template("approval.html", context)
-        subject = f"[ApplyIQ] Review: {job.title} at {job.company} ({application.match_score}% match)"
+        subject = f"[JobCatcher] Review: {job.title} at {job.company} ({application.match_score}% match)"
 
         return await self._send_email(
             to_email=user.email,
@@ -241,7 +241,7 @@ class EmailService:
     ) -> bool:
         context = self._build_context(user, application, job)
         html = self._render_template("approved.html", context)
-        subject = f"[ApplyIQ] Approved: {job.title} at {job.company}"
+        subject = f"[JobCatcher] Approved: {job.title} at {job.company}"
 
         return await self._send_email(
             to_email=user.email,
@@ -257,7 +257,7 @@ class EmailService:
     ) -> bool:
         context = self._build_context(user, application, job)
         html = self._render_template("rejected.html", context)
-        subject = f"[ApplyIQ] Skipped: {job.title} at {job.company}"
+        subject = f"[JobCatcher] Skipped: {job.title} at {job.company}"
 
         return await self._send_email(
             to_email=user.email,
@@ -273,7 +273,7 @@ class EmailService:
     ) -> bool:
         context = self._build_context(user, application, job)
         html = self._render_template("expired.html", context)
-        subject = f"[ApplyIQ] Expired: {job.title} at {job.company}"
+        subject = f"[JobCatcher] Expired: {job.title} at {job.company}"
 
         return await self._send_email(
             to_email=user.email,
@@ -289,7 +289,7 @@ class EmailService:
     ) -> bool:
         context = self._build_context(user, application, job)
         html = self._render_template("submitted.html", context)
-        subject = f"[ApplyIQ] Submitted: {job.title} at {job.company}"
+        subject = f"[JobCatcher] Submitted: {job.title} at {job.company}"
 
         return await self._send_email(
             to_email=user.email,

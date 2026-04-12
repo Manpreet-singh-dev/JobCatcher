@@ -208,6 +208,92 @@ async def update_application(
     return ApplicationResponse.model_validate(application)
 
 
+@router.post("/{application_id}/approve", response_model=ApplicationResponse)
+async def approve_application_authenticated(
+    application_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Application)
+        .options(joinedload(Application.job))
+        .where(
+            Application.id == application_id,
+            Application.user_id == current_user.id,
+        )
+    )
+    application = result.unique().scalar_one_or_none()
+    if not application:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Application not found",
+        )
+
+    if application.status not in ("pending_approval", "expired"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Application cannot be approved from status '{application.status}'",
+        )
+
+    application.status = "approved"
+    application.approval_action_at = datetime.now(timezone.utc)
+    await db.flush()
+
+    user_result = await db.execute(
+        select(User).where(User.id == application.user_id)
+    )
+    user = user_result.scalar_one_or_none()
+    if user and application.job:
+        email_service = EmailService(db)
+        await email_service.send_approved_email(user, application, application.job)
+
+    await db.refresh(application)
+    return ApplicationResponse.model_validate(application)
+
+
+@router.post("/{application_id}/reject", response_model=ApplicationResponse)
+async def reject_application_authenticated(
+    application_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Application)
+        .options(joinedload(Application.job))
+        .where(
+            Application.id == application_id,
+            Application.user_id == current_user.id,
+        )
+    )
+    application = result.unique().scalar_one_or_none()
+    if not application:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Application not found",
+        )
+
+    if application.status != "pending_approval":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Application cannot be rejected from status '{application.status}'",
+        )
+
+    application.status = "rejected"
+    application.approval_action_at = datetime.now(timezone.utc)
+    await db.flush()
+
+    user_result = await db.execute(
+        select(User).where(User.id == application.user_id)
+    )
+    user = user_result.scalar_one_or_none()
+    if user and application.job:
+        email_service = EmailService(db)
+        await email_service.send_rejected_email(user, application, application.job)
+
+    await db.refresh(application)
+    return ApplicationResponse.model_validate(application)
+
+
 @router.get("/{application_id}/approve")
 async def approve_application(
     application_id: uuid.UUID,

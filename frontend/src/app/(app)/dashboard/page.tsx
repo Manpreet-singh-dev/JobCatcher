@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import {
   Send,
@@ -14,13 +14,14 @@ import {
   Building2,
   MapPin,
   ExternalLink,
+  Loader2,
 } from "lucide-react";
 import StatCard from "@/components/stat-card";
 import ActivityLog from "@/components/activity-log";
 import MatchScoreRing from "@/components/match-score-ring";
 import StatusBadge from "@/components/status-badge";
 import { cn, formatSalary } from "@/lib/utils";
-import { analytics, applications, users } from "@/lib/api";
+import { analytics, applications, users, ApiError } from "@/lib/api";
 import type { Application, AnalyticsSummary } from "@/types";
 
 interface PendingJob {
@@ -66,59 +67,87 @@ export default function DashboardPage() {
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
   const [pendingApps, setPendingApps] = useState<PendingJob[]>([]);
   const [recentApps, setRecentApps] = useState<RecentApplication[]>([]);
+  const [actionId, setActionId] = useState<string | null>(null);
+
+  const loadDashboard = useCallback(async () => {
+    try {
+      const [user, summaryData, pendingData, recentData] = await Promise.allSettled([
+        users.getMe(),
+        analytics.getSummary(),
+        applications.list({ status: "pending_approval" as never, page: 1, per_page: 10 }),
+        applications.list({ page: 1, per_page: 5 }),
+      ]);
+
+      if (user.status === "fulfilled") {
+        setUserName(user.value.name || "there");
+      }
+      if (summaryData.status === "fulfilled") {
+        setSummary(summaryData.value);
+      }
+      if (pendingData.status === "fulfilled") {
+        const items = pendingData.value.items || [];
+        setPendingApps(items.map((app: Application) => ({
+          id: app.id,
+          title: app.job?.title || "Unknown Role",
+          company: app.job?.company || "Unknown Company",
+          location: app.job?.location || "Not specified",
+          salary: formatSalary(
+            app.job?.salary_min ?? undefined,
+            app.job?.salary_max ?? undefined,
+            app.job?.salary_currency ?? "USD"
+          ),
+          matchScore: app.match_score || 0,
+          postedAgo: app.created_at ? new Date(app.created_at).toLocaleDateString() : "Recently",
+          tags: app.job?.requirements || (app.match_analysis?.matched_skills ?? []).slice(0, 3),
+        })));
+      }
+      if (recentData.status === "fulfilled") {
+        const items = recentData.value.items || [];
+        setRecentApps(items.map((app: Application) => ({
+          id: app.id,
+          title: app.job?.title || "Unknown Role",
+          company: app.job?.company || "Unknown Company",
+          appliedAt: app.created_at ? new Date(app.created_at).toLocaleString() : "",
+          matchScore: app.match_score || 0,
+          status: app.status,
+        })));
+      }
+    } catch {
+      // Fallback gracefully
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    async function fetchDashboard() {
-      try {
-        const [user, summaryData, pendingData, recentData] = await Promise.allSettled([
-          users.getMe(),
-          analytics.getSummary(),
-          applications.list({ status: "pending_approval" as never, page: 1, per_page: 10 }),
-          applications.list({ page: 1, per_page: 5 }),
-        ]);
+    void loadDashboard();
+  }, [loadDashboard]);
 
-        if (user.status === "fulfilled") {
-          setUserName(user.value.name || "there");
-        }
-        if (summaryData.status === "fulfilled") {
-          setSummary(summaryData.value);
-        }
-        if (pendingData.status === "fulfilled") {
-          const items = pendingData.value.items || [];
-          setPendingApps(items.map((app: Application) => ({
-            id: app.id,
-            title: app.job?.title || "Unknown Role",
-            company: app.job?.company || "Unknown Company",
-            location: app.job?.location || "Not specified",
-            salary: formatSalary(
-              app.job?.salary_min ?? undefined,
-              app.job?.salary_max ?? undefined,
-              app.job?.salary_currency ?? "USD"
-            ),
-            matchScore: app.match_score || 0,
-            postedAgo: app.created_at ? new Date(app.created_at).toLocaleDateString() : "Recently",
-            tags: app.job?.requirements || (app.match_analysis?.matched_skills ?? []).slice(0, 3),
-          })));
-        }
-        if (recentData.status === "fulfilled") {
-          const items = recentData.value.items || [];
-          setRecentApps(items.map((app: Application) => ({
-            id: app.id,
-            title: app.job?.title || "Unknown Role",
-            company: app.job?.company || "Unknown Company",
-            appliedAt: app.created_at ? new Date(app.created_at).toLocaleString() : "",
-            matchScore: app.match_score || 0,
-            status: app.status,
-          })));
-        }
-      } catch {
-        // Fallback gracefully
-      } finally {
-        setLoading(false);
-      }
+  async function handleApprove(applicationId: string) {
+    setActionId(applicationId);
+    try {
+      await applications.approve(applicationId);
+      await loadDashboard();
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : "Could not approve application.";
+      alert(msg);
+    } finally {
+      setActionId(null);
     }
-    fetchDashboard();
-  }, []);
+  }
+
+  async function handleReject(applicationId: string) {
+    setActionId(applicationId);
+    try {
+      await applications.reject(applicationId);
+      await loadDashboard();
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : "Could not reject application.";
+      alert(msg);
+    } finally {
+      setActionId(null);
+    }
+  }
 
   if (loading) {
     return (
@@ -263,16 +292,30 @@ export default function DashboardPage() {
                     </div>
 
                     <div className="mt-3 flex items-center gap-2">
-                      <button className="flex items-center gap-1.5 rounded-lg bg-[#00D4AA] px-3.5 py-1.5 text-xs font-semibold text-[#0F0F1A] transition-colors hover:bg-[#00D4AA]/90">
-                        <CheckCircle2 className="h-3.5 w-3.5" />
+                      <button
+                        type="button"
+                        disabled={actionId === job.id}
+                        onClick={() => void handleApprove(job.id)}
+                        className="flex items-center gap-1.5 rounded-lg bg-[#00D4AA] px-3.5 py-1.5 text-xs font-semibold text-[#0F0F1A] transition-colors hover:bg-[#00D4AA]/90 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {actionId === job.id ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                        )}
                         Approve
                       </button>
-                      <button className="flex items-center gap-1.5 rounded-lg border border-[#FF6B6B]/30 px-3.5 py-1.5 text-xs font-medium text-[#FF6B6B] transition-colors hover:bg-[#FF6B6B]/10">
+                      <button
+                        type="button"
+                        disabled={actionId === job.id}
+                        onClick={() => void handleReject(job.id)}
+                        className="flex items-center gap-1.5 rounded-lg border border-[#FF6B6B]/30 px-3.5 py-1.5 text-xs font-medium text-[#FF6B6B] transition-colors hover:bg-[#FF6B6B]/10 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
                         <XCircle className="h-3.5 w-3.5" />
                         Reject
                       </button>
                       <Link
-                        href={`/jobs/${job.id}`}
+                        href={`/applications/${job.id}`}
                         className="ml-auto flex items-center gap-1 text-xs text-[#6C63FF] hover:text-[#6C63FF]/80"
                       >
                         View details

@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: Optional[str] = None
     OPENAI_API_KEY: Optional[str] = None
     SENDGRID_API_KEY: Optional[str] = None
-    FROM_EMAIL: str = "noreply@applyiq.com"
+    FROM_EMAIL: str = "noreply@jobcatcher.app"
 
     GOOGLE_CLIENT_ID: Optional[str] = None
     GOOGLE_CLIENT_SECRET: Optional[str] = None

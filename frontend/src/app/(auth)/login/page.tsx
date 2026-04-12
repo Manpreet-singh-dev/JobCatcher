@@ -66,7 +66,7 @@ function LoginForm() {
         </div>
         <h1 className="text-2xl font-bold text-[#F0F0FF]">Welcome back</h1>
         <p className="mt-2 text-sm text-[#8888AA]">
-          Sign in to your ApplyIQ account
+          Sign in to your JobCatcher account
         </p>
       </div>
 

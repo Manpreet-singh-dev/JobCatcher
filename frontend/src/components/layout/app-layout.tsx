@@ -32,7 +32,7 @@ function AppLayout({ title, children, className }: AppLayoutProps) {
   const [authChecked, setAuthChecked] = React.useState(false);
 
   React.useEffect(() => {
-    const token = Cookies.get("applyiq_token");
+    const token = Cookies.get("jobcatcher_token");
     if (!token) {
       router.replace(`/login?redirect=${encodeURIComponent(pathname)}`);
     } else {
@@ -53,7 +53,7 @@ function AppLayout({ title, children, className }: AppLayoutProps) {
     Object.entries(pageTitles).find(([path]) =>
       pathname.startsWith(path)
     )?.[1] ||
-    "ApplyIQ";
+    "JobCatcher";
 
   return (
     <ToastProvider>

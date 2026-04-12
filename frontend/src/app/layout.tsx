@@ -15,7 +15,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ApplyIQ - AI-Powered Job Applications",
+  title: "JobCatcher - AI-Powered Job Applications",
   description:
     "Autonomous AI agent that discovers, matches, and applies to jobs on your behalf.",
 };

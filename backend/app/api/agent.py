@@ -260,7 +260,7 @@ async def clear_queue(
 ):
     redis_client = await _get_redis()
     try:
-        queue_key = f"applyiq:jobs:{current_user.id}"
+        queue_key = f"jobcatcher:jobs:{current_user.id}"
         deleted = await redis_client.delete(queue_key)
     finally:
         await redis_client.aclose()

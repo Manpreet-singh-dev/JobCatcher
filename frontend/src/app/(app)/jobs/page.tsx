@@ -133,6 +133,7 @@ export default function JobsPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [applyingId, setApplyingId] = useState<string | null>(null);
   const [actionedJobs, setActionedJobs] = useState<Record<string, "applied" | "skipped" | "saved">>({});
+  const [matchMyPreferences, setMatchMyPreferences] = useState(false);
 
   async function handleApply(job: Job) {
     setApplyingId(job.id);
@@ -192,7 +193,8 @@ export default function JobsPage() {
           search: search || undefined,
           source,
           work_mode: workMode as "remote" | "hybrid" | "onsite" | undefined,
-        } as never);
+          apply_preferences: matchMyPreferences,
+        });
 
         const items = ((response as unknown as { items?: BackendJob[]; data?: BackendJob[] }).items ??
           (response as unknown as { items?: BackendJob[]; data?: BackendJob[] }).data ??
@@ -217,7 +219,7 @@ export default function JobsPage() {
     return () => {
       cancelled = true;
     };
-  }, [page, search, sourceFilter, modeFilter]);
+  }, [page, search, sourceFilter, modeFilter, matchMyPreferences]);
 
   const filtered = useMemo(() => {
     let jobs = [...allJobs];
@@ -313,6 +315,19 @@ export default function JobsPage() {
             <option key={m}>{m}</option>
           ))}
         </select>
+
+        <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-[#2E2E4A] bg-[#0F0F1A] px-3 py-2 text-sm text-[#8888AA] hover:border-[#6C63FF]/50">
+          <input
+            type="checkbox"
+            checked={matchMyPreferences}
+            onChange={(e) => {
+              setMatchMyPreferences(e.target.checked);
+              setPage(1);
+            }}
+            className="rounded border-[#2E2E4A] bg-[#1A1A2E] text-[#6C63FF] focus:ring-[#6C63FF]"
+          />
+          <span>Match my preferences</span>
+        </label>
 
         <button
           onClick={() => setShowFilters(!showFilters)}

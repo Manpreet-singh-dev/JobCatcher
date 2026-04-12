@@ -8,7 +8,7 @@ from workers.celery_app import celery_app, get_db, get_redis, run_async
 
 logger = logging.getLogger(__name__)
 
-JOB_QUEUE_KEY = "applyiq:jobs:{user_id}"
+JOB_QUEUE_KEY = "jobcatcher:jobs:{user_id}"
 
 
 def _get_scraper():

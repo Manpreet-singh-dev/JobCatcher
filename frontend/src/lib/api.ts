@@ -18,8 +18,8 @@ import type {
 } from "@/types";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
-const TOKEN_KEY = "applyiq_token";
-const REFRESH_KEY = "applyiq_refresh";
+const TOKEN_KEY = "jobcatcher_token";
+const REFRESH_KEY = "jobcatcher_refresh";
 
 class ApiClient {
   private baseUrl: string;

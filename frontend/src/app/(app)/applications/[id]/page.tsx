@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
@@ -18,6 +18,9 @@ import {
   User,
   Send,
   ExternalLink,
+  Loader2,
+  CheckCircle2,
+  XCircle,
   Globe,
   Users,
   CalendarDays,
@@ -25,7 +28,7 @@ import {
 import MatchScoreRing from "@/components/match-score-ring";
 import StatusBadge from "@/components/status-badge";
 import { cn, formatSalary } from "@/lib/utils";
-import { applications as appApi } from "@/lib/api";
+import { applications as appApi, ApiError } from "@/lib/api";
 import type { Application } from "@/types";
 
 function getScoreColor(score: number): string {
@@ -74,54 +77,87 @@ export default function ApplicationDetailPage() {
   const [appData, setAppData] = useState<AppDetailData | null>(null);
   const [statusOverride, setStatusOverride] = useState("pending_approval");
   const [error, setError] = useState<string | null>(null);
+  const [decisionLoading, setDecisionLoading] = useState<"approve" | "reject" | null>(null);
+
+  const reloadApplication = useCallback(async () => {
+    const id = params.id as string;
+    const data: Application = await appApi.getById(id);
+    const job = data.job;
+    const analysis = data.match_analysis;
+
+    setAppData({
+      id: data.id,
+      title: job?.title || "Unknown Role",
+      company: job?.company || "Unknown Company",
+      location: job?.location || "Not specified",
+      salary: formatSalary(
+        job?.salary_min ?? undefined,
+        job?.salary_max ?? undefined,
+        job?.salary_currency ?? "USD"
+      ),
+      workMode: job?.work_mode || "Not specified",
+      source: job?.source || "Unknown",
+      postedDate: job?.posted_at ? new Date(job.posted_at).toLocaleDateString() : "",
+      matchScore: data.match_score || 0,
+      status: data.status,
+      description: job?.description || "No description available.",
+      requirements: job?.requirements || [],
+      niceToHave: [],
+      matchAnalysis: {
+        reasons: analysis?.match_reasons || [],
+        skillsYouHave: analysis?.matched_skills || [],
+        skillsRequired: analysis?.missing_skills || [],
+      },
+      timeline: [
+        { time: new Date(data.created_at).toLocaleString(), event: "Application created by agent", icon: "bot", color: "#6C63FF" },
+        ...(data.approval_action_at ? [{ time: new Date(data.approval_action_at).toLocaleString(), event: `You ${data.status === "rejected" ? "rejected" : "approved"} the application`, icon: "user", color: data.status === "rejected" ? "#FF6B6B" : "#00D4AA" }] : []),
+        ...(data.submitted_at ? [{ time: new Date(data.submitted_at).toLocaleString(), event: "Application submitted", icon: "send", color: "#00D4AA" }] : []),
+      ],
+    });
+    setStatusOverride(data.status);
+    setNotes(data.user_notes || "");
+  }, [params.id]);
 
   useEffect(() => {
     async function fetchApplication() {
       try {
-        const id = params.id as string;
-        const data: Application = await appApi.getById(id);
-        const job = data.job;
-        const analysis = data.match_analysis;
-
-        setAppData({
-          id: data.id,
-          title: job?.title || "Unknown Role",
-          company: job?.company || "Unknown Company",
-          location: job?.location || "Not specified",
-          salary: formatSalary(
-            job?.salary_min ?? undefined,
-            job?.salary_max ?? undefined,
-            job?.salary_currency ?? "USD"
-          ),
-          workMode: job?.work_mode || "Not specified",
-          source: job?.source || "Unknown",
-          postedDate: job?.posted_at ? new Date(job.posted_at).toLocaleDateString() : "",
-          matchScore: data.match_score || 0,
-          status: data.status,
-          description: job?.description || "No description available.",
-          requirements: job?.requirements || [],
-          niceToHave: [],
-          matchAnalysis: {
-            reasons: analysis?.match_reasons || [],
-            skillsYouHave: analysis?.matched_skills || [],
-            skillsRequired: analysis?.missing_skills || [],
-          },
-          timeline: [
-            { time: new Date(data.created_at).toLocaleString(), event: "Application created by agent", icon: "bot", color: "#6C63FF" },
-            ...(data.approval_action_at ? [{ time: new Date(data.approval_action_at).toLocaleString(), event: `You ${data.status === "rejected" ? "rejected" : "approved"} the application`, icon: "user", color: data.status === "rejected" ? "#FF6B6B" : "#00D4AA" }] : []),
-            ...(data.submitted_at ? [{ time: new Date(data.submitted_at).toLocaleString(), event: "Application submitted", icon: "send", color: "#00D4AA" }] : []),
-          ],
-        });
-        setStatusOverride(data.status);
-        setNotes(data.user_notes || "");
+        await reloadApplication();
       } catch {
         setError("Failed to load application details.");
       } finally {
         setLoading(false);
       }
     }
-    fetchApplication();
-  }, [params.id]);
+    void fetchApplication();
+  }, [params.id, reloadApplication]);
+
+  async function handleApproveFromDetail() {
+    if (!appData) return;
+    setDecisionLoading("approve");
+    try {
+      await appApi.approve(appData.id);
+      await reloadApplication();
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : "Could not approve application.";
+      alert(msg);
+    } finally {
+      setDecisionLoading(null);
+    }
+  }
+
+  async function handleRejectFromDetail() {
+    if (!appData) return;
+    setDecisionLoading("reject");
+    try {
+      await appApi.reject(appData.id);
+      await reloadApplication();
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : "Could not reject application.";
+      alert(msg);
+    } finally {
+      setDecisionLoading(null);
+    }
+  }
 
   if (loading) {
     return (
@@ -409,6 +445,49 @@ export default function ApplicationDetailPage() {
 
         {/* Right Column */}
         <div className="space-y-6">
+          {(appData.status === "pending_approval" || appData.status === "expired") && (
+            <div className="rounded-xl border border-[#2E2E4A] bg-[#1A1A2E] p-6">
+              <h2 className="mb-3 text-sm font-semibold text-[#F0F0FF]">
+                Your decision
+              </h2>
+              <p className="mb-4 text-xs text-[#8888AA]">
+                {appData.status === "expired"
+                  ? "This request expired, but you can still approve from your dashboard."
+                  : "Approve to confirm this application, or reject to skip this role."}
+              </p>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <button
+                  type="button"
+                  disabled={decisionLoading !== null}
+                  onClick={() => void handleApproveFromDetail()}
+                  className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-[#00D4AA] px-4 py-2.5 text-sm font-semibold text-[#0F0F1A] transition-colors hover:bg-[#00D4AA]/90 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {decisionLoading === "approve" ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="h-4 w-4" />
+                  )}
+                  Approve
+                </button>
+                {appData.status === "pending_approval" && (
+                  <button
+                    type="button"
+                    disabled={decisionLoading !== null}
+                    onClick={() => void handleRejectFromDetail()}
+                    className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-[#FF6B6B]/40 px-4 py-2.5 text-sm font-semibold text-[#FF6B6B] transition-colors hover:bg-[#FF6B6B]/10 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {decisionLoading === "reject" ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <XCircle className="h-4 w-4" />
+                    )}
+                    Reject
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Match Score */}
           <div className="rounded-xl border border-[#2E2E4A] bg-[#1A1A2E] p-6 text-center">
             <h2 className="mb-4 text-lg font-semibold text-[#F0F0FF]">

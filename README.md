@@ -1,4 +1,4 @@
-# ApplyIQ — AI Job Application Agent
+# JobCatcher — AI Job Application Agent
 
 An autonomous AI-powered job application platform that scans job boards, scores matches against your resume, tailors your resume for each role, and submits applications with your approval.
 
@@ -16,7 +16,7 @@ An autonomous AI-powered job application platform that scans job boards, scores 
 ## Project Structure
 
 ```
-applyiq/
+jobcatcher/
 ├── frontend/                   # Next.js 14 app
 │   ├── src/
 │   │   ├── app/               # App Router pages

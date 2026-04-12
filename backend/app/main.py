@@ -49,17 +49,17 @@ ws_manager = WebSocketManager()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Starting ApplyIQ backend...")
+    logger.info("Starting JobCatcher backend...")
     async with engine.begin() as conn:
         await conn.execute(text("SELECT 1"))
     logger.info("Database connection verified")
     yield
-    logger.info("Shutting down ApplyIQ backend...")
+    logger.info("Shutting down JobCatcher backend...")
     await engine.dispose()
 
 
 app = FastAPI(
-    title="ApplyIQ API",
+    title="JobCatcher API",
     description="AI-powered autonomous job application platform",
     version="1.0.0",
     lifespan=lifespan,
