@@ -1,0 +1,335 @@
+import Cookies from "js-cookie";
+import type {
+  User,
+  UserPreferences,
+  Resume,
+  Job,
+  JobFilters,
+  Application,
+  ApplicationStatus,
+  AgentStatus,
+  AgentLog,
+  AnalyticsSummary,
+  ApplicationsOverTime,
+  StatusDistribution,
+  TopSkill,
+  MatchScoreHistogramBucket,
+  PaginatedResponse,
+} from "@/types";
+
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+const TOKEN_KEY = "applyiq_token";
+const REFRESH_KEY = "applyiq_refresh";
+
+class ApiClient {
+  private baseUrl: string;
+  private isRefreshing = false;
+  private refreshPromise: Promise<string | null> | null = null;
+
+  constructor(baseUrl: string) {
+    this.baseUrl = baseUrl;
+  }
+
+  private getToken(): string | undefined {
+    return Cookies.get(TOKEN_KEY);
+  }
+
+  private setToken(token: string): void {
+    Cookies.set(TOKEN_KEY, token, { expires: 1, sameSite: "strict" });
+  }
+
+  private setRefreshToken(token: string): void {
+    Cookies.set(REFRESH_KEY, token, { expires: 7, sameSite: "strict" });
+  }
+
+  private getRefreshToken(): string | undefined {
+    return Cookies.get(REFRESH_KEY);
+  }
+
+  private clearTokens(): void {
+    Cookies.remove(TOKEN_KEY);
+    Cookies.remove(REFRESH_KEY);
+  }
+
+  private async refreshAccessToken(): Promise<string | null> {
+    if (this.isRefreshing && this.refreshPromise) {
+      return this.refreshPromise;
+    }
+
+    this.isRefreshing = true;
+    this.refreshPromise = (async () => {
+      const refreshToken = this.getRefreshToken();
+      if (!refreshToken) {
+        this.clearTokens();
+        return null;
+      }
+
+      try {
+        const response = await fetch(`${this.baseUrl}/auth/refresh`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh_token: refreshToken }),
+        });
+
+        if (!response.ok) {
+          this.clearTokens();
+          return null;
+        }
+
+        const data = await response.json();
+        this.setToken(data.access_token);
+        if (data.refresh_token) {
+          this.setRefreshToken(data.refresh_token);
+        }
+        return data.access_token;
+      } catch {
+        this.clearTokens();
+        return null;
+      } finally {
+        this.isRefreshing = false;
+        this.refreshPromise = null;
+      }
+    })();
+
+    return this.refreshPromise;
+  }
+
+  private async request<T>(
+    method: string,
+    path: string,
+    options?: {
+      body?: unknown;
+      params?: Record<string, string | number | boolean | undefined>;
+      headers?: Record<string, string>;
+      isFormData?: boolean;
+    }
+  ): Promise<T> {
+    const url = new URL(`${this.baseUrl}${path}`);
+    if (options?.params) {
+      Object.entries(options.params).forEach(([key, value]) => {
+        if (value !== undefined) {
+          url.searchParams.set(key, String(value));
+        }
+      });
+    }
+
+    const headers: Record<string, string> = { ...options?.headers };
+    const token = this.getToken();
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    if (!options?.isFormData) {
+      headers["Content-Type"] = "application/json";
+    }
+
+    const response = await fetch(url.toString(), {
+      method,
+      headers,
+      body: options?.isFormData
+        ? (options.body as FormData)
+        : options?.body
+          ? JSON.stringify(options.body)
+          : undefined,
+    });
+
+    if (response.status === 401) {
+      const newToken = await this.refreshAccessToken();
+      if (newToken) {
+        headers["Authorization"] = `Bearer ${newToken}`;
+        const retryResponse = await fetch(url.toString(), {
+          method,
+          headers,
+          body: options?.isFormData
+            ? (options.body as FormData)
+            : options?.body
+              ? JSON.stringify(options.body)
+              : undefined,
+        });
+        if (!retryResponse.ok) {
+          const error = await retryResponse.json().catch(() => ({ message: "Request failed" }));
+          throw new ApiError(retryResponse.status, error.message, error.code, error.details);
+        }
+        return retryResponse.json();
+      }
+      this.clearTokens();
+      if (typeof window !== "undefined") {
+        window.location.href = "/login";
+      }
+      throw new ApiError(401, "Session expired", "UNAUTHORIZED");
+    }
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: "Request failed" }));
+      throw new ApiError(response.status, error.message, error.code, error.details);
+    }
+
+    if (response.status === 204) return undefined as T;
+    return response.json();
+  }
+
+  async get<T>(path: string, params?: Record<string, string | number | boolean | undefined>): Promise<T> {
+    return this.request<T>("GET", path, { params });
+  }
+
+  async post<T>(path: string, body?: unknown): Promise<T> {
+    return this.request<T>("POST", path, { body });
+  }
+
+  async put<T>(path: string, body?: unknown): Promise<T> {
+    return this.request<T>("PUT", path, { body });
+  }
+
+  async del<T>(path: string): Promise<T> {
+    return this.request<T>("DELETE", path);
+  }
+
+  async upload<T>(path: string, formData: FormData): Promise<T> {
+    return this.request<T>("POST", path, { body: formData, isFormData: true });
+  }
+
+  handleAuthResponse(data: { access_token: string; refresh_token: string }): void {
+    this.setToken(data.access_token);
+    this.setRefreshToken(data.refresh_token);
+  }
+
+  logout(): void {
+    this.clearTokens();
+  }
+}
+
+export class ApiError extends Error {
+  status: number;
+  code?: string;
+  details?: Record<string, string[]>;
+
+  constructor(status: number, message: string, code?: string, details?: Record<string, string[]>) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.code = code;
+    this.details = details;
+  }
+}
+
+const client = new ApiClient(BASE_URL);
+
+export const auth = {
+  register: (data: { email: string; password: string; name: string }) =>
+    client.post<{ access_token: string; refresh_token: string; user: User }>("/auth/register", data)
+      .then((res) => { client.handleAuthResponse(res); return res; }),
+
+  login: (data: { email: string; password: string }) =>
+    client.post<{ access_token: string; refresh_token: string; user: User }>("/auth/login", data)
+      .then((res) => { client.handleAuthResponse(res); return res; }),
+
+  logout: () => {
+    client.logout();
+    return client.post<void>("/auth/logout").catch(() => { /* ignore */ });
+  },
+
+  googleAuth: (data: { code: string; redirect_uri: string }) =>
+    client.post<{ access_token: string; refresh_token: string; user: User }>("/auth/google", data)
+      .then((res) => { client.handleAuthResponse(res); return res; }),
+
+  refreshToken: () =>
+    client.post<{ access_token: string; refresh_token: string }>("/auth/refresh"),
+
+  verifyEmail: (token: string) =>
+    client.post<{ message: string }>("/auth/verify-email", { token }),
+};
+
+export const users = {
+  getMe: () => client.get<User>("/users/me"),
+  updateMe: (data: Partial<{ name: string }>) =>
+    client.put<User>("/users/me", data),
+  deleteMe: () => client.del<void>("/users/me"),
+};
+
+export const preferences = {
+  get: () => client.get<UserPreferences>("/preferences"),
+  update: (data: Partial<UserPreferences>) =>
+    client.put<UserPreferences>("/preferences", data),
+};
+
+export const resumes = {
+  list: () => client.get<Resume[]>("/resumes"),
+  upload: (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return client.upload<Resume>("/resumes/upload", formData);
+  },
+  getById: (id: string) => client.get<Resume>(`/resumes/${id}`),
+  update: (id: string, data: Partial<Resume>) =>
+    client.put<Resume>(`/resumes/${id}`, data),
+  delete: (id: string) => client.del<void>(`/resumes/${id}`),
+  setBase: (id: string) =>
+    client.post<Resume>(`/resumes/${id}/set-base`, {}),
+};
+
+export const jobs = {
+  list: (filters?: JobFilters) =>
+    client.get<PaginatedResponse<Job>>("/jobs", filters as Record<string, string | number | boolean | undefined>),
+  getById: (id: string) => client.get<Job>(`/jobs/${id}`),
+};
+
+export const applications = {
+  list: (filters?: {
+    status?: ApplicationStatus;
+    sort_by?: string;
+    sort_order?: "asc" | "desc";
+    page?: number;
+    per_page?: number;
+    page_size?: number;
+  }) => {
+    const params = { ...filters } as Record<string, string | number | boolean | undefined>;
+    if (params.per_page && !params.page_size) {
+      params.page_size = params.per_page;
+      delete params.per_page;
+    }
+    return client.get<PaginatedResponse<Application>>("/applications", params);
+  },
+  create: (jobId: string) =>
+    client.post<Application>(`/applications?job_id=${jobId}`),
+  getById: (id: string) => client.get<Application>(`/applications/${id}`),
+  update: (id: string, data: Partial<Application>) =>
+    client.put<Application>(`/applications/${id}`, data),
+  approve: (id: string) =>
+    client.post<Application>(`/applications/${id}/approve`),
+  reject: (id: string) =>
+    client.post<Application>(`/applications/${id}/reject`),
+  reactivate: (id: string) =>
+    client.post<Application>(`/applications/${id}/reactivate`),
+};
+
+export const agent = {
+  getStatus: () => client.get<AgentStatus>("/agent/status"),
+  pause: () => client.post<AgentStatus>("/agent/pause"),
+  resume: () => client.post<AgentStatus>("/agent/resume"),
+  runNow: () => client.post<AgentStatus>("/agent/run-now"),
+  getLogs: (params?: { page?: number; per_page?: number }) =>
+    client.get<PaginatedResponse<AgentLog>>("/agent/logs", params as Record<string, string | number | boolean | undefined>),
+  getTodaySummary: () =>
+    client.get<{
+      jobs_scanned: number;
+      jobs_matched: number;
+      resumes_tailored: number;
+      approvals_sent: number;
+      applications_submitted: number;
+    }>("/agent/today-summary"),
+  resetDailyLimit: () => client.post<{ message: string }>("/agent/reset-daily-limit"),
+  clearQueue: () => client.post<{ message: string }>("/agent/clear-queue"),
+};
+
+export const analytics = {
+  getSummary: () =>
+    client.get<AnalyticsSummary>("/analytics/summary"),
+  getApplicationsOverTime: (params?: { days?: number }) =>
+    client.get<ApplicationsOverTime[]>("/analytics/applications-over-time", params as Record<string, string | number | boolean | undefined>),
+  getStatusDistribution: () =>
+    client.get<StatusDistribution[]>("/analytics/status-distribution"),
+  getTopSkills: () =>
+    client.get<TopSkill[]>("/analytics/top-skills"),
+  getMatchScoreHistogram: () =>
+    client.get<MatchScoreHistogramBucket[]>("/analytics/match-score-histogram"),
+};
