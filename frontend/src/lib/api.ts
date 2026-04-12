@@ -188,6 +188,49 @@ class ApiClient {
     return this.request<T>("POST", path, { body: formData, isFormData: true });
   }
 
+  /** Authenticated GET returning raw bytes (e.g. resume file for preview). */
+  async getBlob(path: string): Promise<Blob> {
+    const url = new URL(`${this.baseUrl}${path}`);
+    const headers: Record<string, string> = {};
+    const token = this.getToken();
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    let response = await fetch(url.toString(), { method: "GET", headers });
+
+    if (response.status === 401) {
+      const newToken = await this.refreshAccessToken();
+      if (newToken) {
+        headers["Authorization"] = `Bearer ${newToken}`;
+        response = await fetch(url.toString(), { method: "GET", headers });
+      } else {
+        this.clearTokens();
+        if (typeof window !== "undefined") {
+          window.location.href = "/login";
+        }
+        throw new ApiError(401, "Session expired", "UNAUTHORIZED");
+      }
+    }
+
+    if (!response.ok) {
+      const data = (await response.json().catch(() => ({}))) as {
+        message?: string;
+        detail?: string | { msg?: string }[];
+        code?: string;
+        details?: Record<string, string[]>;
+      };
+      let msg = "Request failed";
+      if (typeof data.message === "string") msg = data.message;
+      else if (typeof data.detail === "string") msg = data.detail;
+      else if (Array.isArray(data.detail))
+        msg = data.detail.map((d) => (typeof d === "object" && d && "msg" in d ? String(d.msg) : JSON.stringify(d))).join(", ");
+      throw new ApiError(response.status, msg, data.code, data.details);
+    }
+
+    return response.blob();
+  }
+
   handleAuthResponse(data: { access_token: string; refresh_token: string }): void {
     this.setToken(data.access_token);
     this.setRefreshToken(data.refresh_token);
@@ -260,6 +303,8 @@ export const resumes = {
     return client.upload<Resume>("/resumes/upload", formData);
   },
   getById: (id: string) => client.get<Resume>(`/resumes/${id}`),
+  /** Binary PDF or DOCX for preview/download (requires auth cookie). */
+  getFileBlob: (id: string) => client.getBlob(`/resumes/${id}/file`),
   update: (id: string, data: Partial<Resume>) =>
     client.put<Resume>(`/resumes/${id}`, data),
   delete: (id: string) => client.del<void>(`/resumes/${id}`),

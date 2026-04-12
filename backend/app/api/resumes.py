@@ -1,8 +1,10 @@
 import uuid
+from pathlib import Path
 
 import aiofiles
 import aiofiles.os
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -112,6 +114,63 @@ async def upload_resume(
     response = ResumeUploadResponse.model_validate(resume)
     response.message = "Resume uploaded and parsed successfully" if parsed_json else "Resume uploaded successfully"
     return response
+
+
+def _safe_resume_file_path(file_path: str | None) -> Path | None:
+    if not file_path:
+        return None
+    try:
+        root = Path(UPLOAD_DIR).resolve()
+        target = Path(file_path).resolve()
+        target.relative_to(root)
+    except (ValueError, OSError):
+        return None
+    if not target.is_file():
+        return None
+    return target
+
+
+@router.get("/{resume_id}/file")
+async def serve_resume_file(
+    resume_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return the stored resume file (PDF or DOCX) for preview/download."""
+    result = await db.execute(
+        select(Resume).where(
+            Resume.id == resume_id,
+            Resume.user_id == current_user.id,
+        )
+    )
+    resume = result.scalar_one_or_none()
+    if not resume:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Resume not found",
+        )
+    path = _safe_resume_file_path(resume.file_path)
+    if not path:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Resume file not found on disk",
+        )
+    suffix = path.suffix.lower()
+    if suffix == ".pdf":
+        media_type = "application/pdf"
+    elif suffix == ".docx":
+        media_type = (
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+    else:
+        media_type = "application/octet-stream"
+    filename = resume.original_filename or path.name
+    return FileResponse(
+        path,
+        media_type=media_type,
+        filename=filename,
+        content_disposition_type="inline",
+    )
 
 
 @router.get("/{resume_id}", response_model=ResumeResponse)

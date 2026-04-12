@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Upload,
   FileText,
@@ -16,7 +16,7 @@ import {
   Link2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { resumes as resumesApi } from "@/lib/api";
+import { resumes as resumesApi, ApiError } from "@/lib/api";
 
 interface Resume {
   id: string;
@@ -35,7 +35,78 @@ export default function ResumesPage() {
   const [dragActive, setDragActive] = useState(false);
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
   const [previewId, setPreviewId] = useState<string | null>(null);
+  const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const closePreview = useCallback(() => {
+    setPreviewBlobUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+    setPreviewError(null);
+    setPreviewLoading(false);
+    setPreviewId(null);
+  }, []);
+
+  useEffect(() => {
+    if (!previewId) {
+      setPreviewLoading(false);
+      setPreviewError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setPreviewLoading(true);
+    setPreviewError(null);
+    setPreviewBlobUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+
+    void (async () => {
+      try {
+        const blob = await resumesApi.getFileBlob(previewId);
+        if (cancelled) return;
+        const url = URL.createObjectURL(blob);
+        if (cancelled) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        setPreviewBlobUrl(url);
+      } catch (err) {
+        if (!cancelled) {
+          const msg = err instanceof ApiError ? err.message : "Could not load resume file.";
+          setPreviewError(msg);
+        }
+      } finally {
+        if (!cancelled) setPreviewLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [previewId]);
+
+  async function downloadResume(id: string, filename: string) {
+    try {
+      const blob = await resumesApi.getFileBlob(id);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename || "resume";
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      alert("Download failed. Please try again.");
+    }
+    setActiveMenu(null);
+  }
 
   useEffect(() => {
     async function fetchResumes() {
@@ -224,12 +295,19 @@ export default function ResumesPage() {
               {activeMenu === resume.id && (
                 <div className="absolute right-0 top-8 z-10 w-44 rounded-xl border border-[#2E2E4A] bg-[#1A1A2E] py-1 shadow-xl">
                   <button
-                    onClick={() => setPreviewId(resume.id)}
+                    onClick={() => {
+                      setActiveMenu(null);
+                      setPreviewId(resume.id);
+                    }}
                     className="flex w-full items-center gap-2 px-3 py-2 text-sm text-[#F0F0FF] hover:bg-[#252540]"
                   >
                     <Eye className="h-4 w-4" /> Preview
                   </button>
-                  <button className="flex w-full items-center gap-2 px-3 py-2 text-sm text-[#F0F0FF] hover:bg-[#252540]">
+                  <button
+                    type="button"
+                    onClick={() => void downloadResume(resume.id, resume.name)}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-[#F0F0FF] hover:bg-[#252540]"
+                  >
                     <Download className="h-4 w-4" /> Download
                   </button>
                   {!resume.isBase && (
@@ -287,13 +365,18 @@ export default function ResumesPage() {
             {/* Quick Actions */}
             <div className="mt-4 flex items-center gap-2">
               <button
+                type="button"
                 onClick={() => setPreviewId(resume.id)}
                 className="flex items-center gap-1 rounded-lg border border-[#2E2E4A] px-3 py-1.5 text-xs text-[#8888AA] transition-colors hover:border-[#6C63FF]/50 hover:text-[#F0F0FF]"
               >
                 <Eye className="h-3.5 w-3.5" />
                 Preview
               </button>
-              <button className="flex items-center gap-1 rounded-lg border border-[#2E2E4A] px-3 py-1.5 text-xs text-[#8888AA] transition-colors hover:border-[#6C63FF]/50 hover:text-[#F0F0FF]">
+              <button
+                type="button"
+                onClick={() => void downloadResume(resume.id, resume.name)}
+                className="flex items-center gap-1 rounded-lg border border-[#2E2E4A] px-3 py-1.5 text-xs text-[#8888AA] transition-colors hover:border-[#6C63FF]/50 hover:text-[#F0F0FF]"
+              >
                 <Download className="h-3.5 w-3.5" />
                 Download
               </button>
@@ -305,26 +388,69 @@ export default function ResumesPage() {
       {/* Preview Modal */}
       {previewId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <div className="relative w-full max-w-2xl rounded-2xl border border-[#2E2E4A] bg-[#1A1A2E] p-6">
+          <div className="relative flex max-h-[90vh] w-full max-w-4xl flex-col rounded-2xl border border-[#2E2E4A] bg-[#1A1A2E] p-6">
             <button
-              onClick={() => setPreviewId(null)}
+              type="button"
+              onClick={closePreview}
               className="absolute right-4 top-4 rounded-lg p-1 text-[#55557A] hover:bg-[#252540] hover:text-[#F0F0FF]"
             >
               <X className="h-5 w-5" />
             </button>
-            <h2 className="mb-4 text-lg font-semibold text-[#F0F0FF]">
+            <h2 className="mb-1 pr-10 text-lg font-semibold text-[#F0F0FF]">
               Resume Preview
             </h2>
-            <div className="flex aspect-[8.5/11] w-full items-center justify-center rounded-xl border border-[#2E2E4A] bg-[#0F0F1A]">
-              <div className="space-y-4 p-8 text-center">
-                <FileText className="mx-auto h-16 w-16 text-[#55557A]" />
-                <p className="text-sm text-[#8888AA]">
-                  {resumes.find((r) => r.id === previewId)?.name}
-                </p>
-                <p className="text-xs text-[#55557A]">
-                  Full preview would render the PDF/DOCX here
-                </p>
-              </div>
+            <p className="mb-4 truncate text-sm text-[#8888AA]">
+              {resumes.find((r) => r.id === previewId)?.name}
+            </p>
+
+            <div className="min-h-[50vh] flex-1 overflow-hidden rounded-xl border border-[#2E2E4A] bg-[#0F0F1A]">
+              {previewLoading && (
+                <div className="flex h-[50vh] flex-col items-center justify-center gap-3 text-[#8888AA]">
+                  <Loader2 className="h-10 w-10 animate-spin text-[#6C63FF]" />
+                  <p className="text-sm">Loading preview…</p>
+                </div>
+              )}
+              {!previewLoading && previewError && (
+                <div className="flex h-[50vh] flex-col items-center justify-center gap-3 p-6 text-center">
+                  <FileText className="h-12 w-12 text-[#FF6B6B]/60" />
+                  <p className="text-sm text-[#FF6B6B]">{previewError}</p>
+                </div>
+              )}
+              {!previewLoading &&
+                !previewError &&
+                previewBlobUrl &&
+                resumes.find((r) => r.id === previewId)?.fileType === "PDF" && (
+                  <iframe
+                    title="Resume PDF preview"
+                    src={previewBlobUrl}
+                    className="h-[75vh] w-full bg-[#0F0F1A]"
+                  />
+                )}
+              {!previewLoading &&
+                !previewError &&
+                previewBlobUrl &&
+                resumes.find((r) => r.id === previewId)?.fileType === "DOCX" && (
+                  <div className="flex h-[50vh] flex-col items-center justify-center gap-4 p-8 text-center">
+                    <File className="h-14 w-14 text-[#6C63FF]" />
+                    <div className="space-y-2">
+                      <p className="text-sm text-[#F0F0FF]">Word preview isn&apos;t available in the browser</p>
+                      <p className="text-xs text-[#55557A]">
+                        Download the file to open it in Microsoft Word or another compatible app.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const r = resumes.find((x) => x.id === previewId);
+                        if (r) void downloadResume(r.id, r.name);
+                      }}
+                      className="flex items-center gap-2 rounded-xl bg-[#6C63FF] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#5A52E0]"
+                    >
+                      <Download className="h-4 w-4" />
+                      Download DOCX
+                    </button>
+                  </div>
+                )}
             </div>
           </div>
         </div>
