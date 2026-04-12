@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Review Application - ApplyIQ</title>
+</head>
+<body style="margin: 0; padding: 0; background: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+  <div style="max-width: 600px; margin: 0 auto; padding: 40px 20px;">
+    <div style="background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+      <div style="background: #2563eb; padding: 24px; text-align: center;">
+        <h1 style="color: white; margin: 0; font-size: 24px;">ApplyIQ</h1>
+      </div>
+      <div style="padding: 32px;">
+        <h2 style="color: #1e293b; margin: 0 0 8px 0;">New Application Ready for Review</h2>
+        <p style="color: #64748b; margin: 0 0 24px 0;">Hi {{ user_name }},</p>
+        <p style="color: #475569;">ApplyIQ found a matching job for you:</p>
+
+        <div style="background: #f8fafc; padding: 20px; border-radius: 8px; border-left: 4px solid #2563eb; margin: 20px 0;">
+          <h3 style="margin: 0 0 8px 0; color: #1e293b;">{{ job_title }}</h3>
+          <p style="margin: 0 0 4px 0; color: #64748b;">{{ company }} &bull; {{ location }}</p>
+          <p style="margin: 12px 0 0 0;">
+            <span style="display: inline-block; padding: 4px 12px; background: #dbeafe; color: #1d4ed8; border-radius: 20px; font-weight: 600; font-size: 14px;">
+              {{ match_score }}% Match
+            </span>
+          </p>
+        </div>
+
+        {% if match_summary %}
+        <h4 style="color: #1e293b; margin: 20px 0 8px 0;">Match Analysis</h4>
+        <p style="color: #475569; line-height: 1.6;">{{ match_summary }}</p>
+        {% endif %}
+
+        {% if resume_changes %}
+        <h4 style="color: #1e293b; margin: 20px 0 8px 0;">Resume Changes</h4>
+        <p style="color: #475569; line-height: 1.6;">{{ resume_changes }}</p>
+        {% endif %}
+
+        <div style="margin: 32px 0; text-align: center;">
+          <a href="{{ approve_url }}"
+             style="display: inline-block; padding: 14px 36px; background: #22c55e; color: white;
+                    text-decoration: none; border-radius: 8px; margin-right: 12px; font-weight: 600; font-size: 16px;">
+            Approve &amp; Apply
+          </a>
+          <a href="{{ reject_url }}"
+             style="display: inline-block; padding: 14px 36px; background: #ef4444; color: white;
+                    text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px;">
+            Skip
+          </a>
+        </div>
+
+        <p style="color: #94a3b8; font-size: 12px; text-align: center; margin: 24px 0 0 0;">
+          This link expires in 48 hours. You can also manage applications from your
+          <a href="{{ app_url }}/applications" style="color: #2563eb;">dashboard</a>.
+        </p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

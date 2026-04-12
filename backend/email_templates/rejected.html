@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block title %}❌ Application Skipped — {{ job_title }} at {{ company }}{% endblock %}
+{% block preheader %}You chose to skip {{ job_title }} at {{ company }}. We'll keep looking!{% endblock %}
+
+{% block content %}
+
+<p style="margin: 0 0 20px 0; font-size: 16px; color: #111827;">
+    Hi {{ user_name }},
+</p>
+
+<h1 style="margin: 0 0 24px 0; font-size: 22px; font-weight: 700; color: #6b7280; line-height: 1.3;">
+    &#x274C; Application Skipped
+</h1>
+
+<p style="margin: 0 0 20px 0; font-size: 15px; color: #374151;">
+    No worries — you chose to skip this application. We'll keep searching for better matches.
+</p>
+
+<!-- Job Card -->
+<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-bottom: 24px;">
+    <tr>
+        <td style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 12px; padding: 20px;">
+            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                <tr>
+                    <td width="52" valign="top" style="padding-right: 16px;">
+                        <div style="width: 48px; height: 48px; background-color: #9ca3af; border-radius: 10px; text-align: center; line-height: 48px; font-size: 20px; font-weight: 700; color: #ffffff;">
+                            {{ company[0] | upper if company else "?" }}
+                        </div>
+                    </td>
+                    <td valign="top">
+                        <h2 style="margin: 0 0 4px 0; font-size: 18px; font-weight: 700; color: #111827;">
+                            {{ job_title }}
+                        </h2>
+                        <p style="margin: 0 0 4px 0; font-size: 14px; color: #6b7280;">
+                            {{ company }} &bull; {{ location }}
+                        </p>
+                        {% if match_score %}
+                        <p style="margin: 0; font-size: 13px; color: #9ca3af; font-weight: 600;">
+                            Match Score: {{ match_score }}%
+                        </p>
+                        {% endif %}
+                    </td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+</table>
+
+<!-- Feedback -->
+<div style="background-color: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 16px; margin-bottom: 24px; text-align: center;">
+    <p style="margin: 0 0 8px 0; font-size: 14px; font-weight: 600; color: #0369a1;">
+        Did we get it wrong?
+    </p>
+    <p style="margin: 0 0 12px 0; font-size: 13px; color: #0c4a6e;">
+        Your feedback helps us find better matches for you.
+    </p>
+    <a href="{{ app_url }}/feedback?application_id={{ application_id | default('') }}" target="_blank"
+       style="display: inline-block; padding: 10px 24px; background-color: #0284c7; color: #ffffff;
+              font-size: 13px; font-weight: 600; text-decoration: none; border-radius: 6px;">
+        Give Feedback &#x2192;
+    </a>
+</div>
+
+<p style="margin: 0; text-align: center; font-size: 13px; color: #9ca3af;">
+    Your AI agent is still actively searching. We'll notify you when we find the next great match.
+</p>
+
+{% endblock %}

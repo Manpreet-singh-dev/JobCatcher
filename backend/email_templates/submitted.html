@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+
+{% block title %}🎉 Application Submitted — {{ job_title }} at {{ company }}{% endblock %}
+{% block preheader %}Your application for {{ job_title }} at {{ company }} was successfully submitted!{% endblock %}
+
+{% block content %}
+
+<p style="margin: 0 0 20px 0; font-size: 16px; color: #111827;">
+    Hi {{ user_name }},
+</p>
+
+<h1 style="margin: 0 0 8px 0; font-size: 22px; font-weight: 700; color: #6C63FF; line-height: 1.3;">
+    &#x1F389; Application Successfully Submitted!
+</h1>
+<p style="margin: 0 0 24px 0; font-size: 15px; color: #374151;">
+    Your tailored application has been delivered. Here are the details:
+</p>
+
+<!-- Job Card -->
+<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-bottom: 24px;">
+    <tr>
+        <td style="background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%); border: 1px solid #c7d2fe; border-radius: 12px; padding: 20px;">
+            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                <tr>
+                    <td width="52" valign="top" style="padding-right: 16px;">
+                        <div style="width: 48px; height: 48px; background-color: #6C63FF; border-radius: 10px; text-align: center; line-height: 48px; font-size: 20px; font-weight: 700; color: #ffffff;">
+                            {{ company[0] | upper if company else "?" }}
+                        </div>
+                    </td>
+                    <td valign="top">
+                        <h2 style="margin: 0 0 4px 0; font-size: 18px; font-weight: 700; color: #111827;">
+                            {{ job_title }}
+                        </h2>
+                        <p style="margin: 0 0 4px 0; font-size: 14px; color: #6b7280;">
+                            {{ company }} &bull; {{ location }}
+                        </p>
+                        {% if match_score %}
+                        <p style="margin: 0; font-size: 13px; color: #6C63FF; font-weight: 600;">
+                            Match Score: {{ match_score }}%
+                        </p>
+                        {% endif %}
+                    </td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+</table>
+
+<!-- What Happens Next -->
+<h3 style="margin: 0 0 12px 0; font-size: 16px; font-weight: 700; color: #1e1b4b;">
+    What happens next?
+</h3>
+<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-bottom: 24px;">
+    <tr>
+        <td style="padding: 6px 0;">
+            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                <tr>
+                    <td width="32" valign="top" style="font-size: 16px;">&#x1F4E8;</td>
+                    <td style="font-size: 14px; color: #374151;">The company will review your application and get back to you directly via email.</td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+    <tr>
+        <td style="padding: 6px 0;">
+            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                <tr>
+                    <td width="32" valign="top" style="font-size: 16px;">&#x1F50D;</td>
+                    <td style="font-size: 14px; color: #374151;">Your AI agent continues searching for new matching opportunities.</td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+    <tr>
+        <td style="padding: 6px 0;">
+            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                <tr>
+                    <td width="32" valign="top" style="font-size: 16px;">&#x1F4CA;</td>
+                    <td style="font-size: 14px; color: #374151;">Track all your applications and their statuses on your dashboard.</td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+</table>
+
+<!-- CTA -->
+<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+    <tr>
+        <td align="center">
+            <a href="{{ app_url }}/dashboard" target="_blank"
+               style="display: inline-block; padding: 14px 32px; background-color: #6C63FF; color: #ffffff;
+                      font-size: 14px; font-weight: 700; text-decoration: none; border-radius: 8px;
+                      box-shadow: 0 2px 4px rgba(108,99,255,0.3);">
+                Go to Dashboard &#x2192;
+            </a>
+        </td>
+    </tr>
+</table>
+
+{% endblock %}

@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}⏰ Application Expired — {{ job_title }} at {{ company }}{% endblock %}
+{% block preheader %}The 48-hour approval window for {{ job_title }} at {{ company }} has expired{% endblock %}
+
+{% block content %}
+
+<p style="margin: 0 0 20px 0; font-size: 16px; color: #111827;">
+    Hi {{ user_name }},
+</p>
+
+<h1 style="margin: 0 0 24px 0; font-size: 22px; font-weight: 700; color: #d97706; line-height: 1.3;">
+    &#x23F0; Approval Window Expired
+</h1>
+
+<p style="margin: 0 0 20px 0; font-size: 15px; color: #374151;">
+    The 48-hour approval window for this application has passed without a response, so it was automatically skipped.
+</p>
+
+<!-- Job Card -->
+<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-bottom: 24px;">
+    <tr>
+        <td style="background-color: #fffbeb; border: 1px solid #fde68a; border-radius: 12px; padding: 20px;">
+            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                <tr>
+                    <td width="52" valign="top" style="padding-right: 16px;">
+                        <div style="width: 48px; height: 48px; background-color: #f59e0b; border-radius: 10px; text-align: center; line-height: 48px; font-size: 20px; font-weight: 700; color: #ffffff;">
+                            {{ company[0] | upper if company else "?" }}
+                        </div>
+                    </td>
+                    <td valign="top">
+                        <h2 style="margin: 0 0 4px 0; font-size: 18px; font-weight: 700; color: #111827;">
+                            {{ job_title }}
+                        </h2>
+                        <p style="margin: 0 0 4px 0; font-size: 14px; color: #6b7280;">
+                            {{ company }} &bull; {{ location }}
+                        </p>
+                        {% if match_score %}
+                        <p style="margin: 0; font-size: 13px; color: #d97706; font-weight: 600;">
+                            Match Score: {{ match_score }}%
+                        </p>
+                        {% endif %}
+                    </td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+</table>
+
+<!-- Tip -->
+<div style="background-color: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 16px; margin-bottom: 24px;">
+    <p style="margin: 0 0 6px 0; font-size: 13px; font-weight: 600; color: #0369a1;">&#x1F4A1; Tip</p>
+    <p style="margin: 0; font-size: 13px; color: #0c4a6e;">
+        If you'd like applications to be submitted automatically for high-confidence matches, you can enable <strong>auto-approve</strong> in your
+        <a href="{{ app_url }}/settings" style="color: #6C63FF; text-decoration: underline;">settings</a>.
+    </p>
+</div>
+
+<!-- CTA -->
+<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-bottom: 16px;">
+    <tr>
+        <td align="center">
+            <a href="{{ app_url }}/applications/{{ application_id | default('') }}/reactivate" target="_blank"
+               style="display: inline-block; padding: 14px 32px; background-color: #f59e0b; color: #ffffff;
+                      font-size: 14px; font-weight: 700; text-decoration: none; border-radius: 8px;
+                      box-shadow: 0 2px 4px rgba(245,158,11,0.3);">
+                Re-activate This Application &#x2192;
+            </a>
+        </td>
+    </tr>
+</table>
+
+<p style="margin: 0; text-align: center; font-size: 13px; color: #9ca3af;">
+    Don't worry — your AI agent is still searching for new opportunities.
+</p>
+
+{% endblock %}
