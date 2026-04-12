@@ -3,39 +3,39 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Search,
-  SlidersHorizontal,
   List,
   LayoutGrid,
   ChevronLeft,
   ChevronRight,
   Building2,
   MapPin,
-  Briefcase,
   Clock,
-  CheckCircle2,
   XCircle,
   Bookmark,
   X,
   Loader2,
+  Mail,
+  ExternalLink,
+  DollarSign,
 } from "lucide-react";
-import MatchScoreRing from "@/components/match-score-ring";
-import { cn, formatRelativeTime, formatSalary } from "@/lib/utils";
-import { jobs, applications } from "@/lib/api";
+import { cn, formatRelativeTime, formatSalary, getInitials, generateGradient } from "@/lib/utils";
+import { jobs, ApiError } from "@/lib/api";
 
 interface Job {
   id: string;
   title: string;
   company: string;
+  companyLogoUrl: string | null;
   location: string;
   workMode: string;
   salary: string;
-  matchScore: number;
   postedAgo: string;
+  postedAtMs: number;
   source: string;
   tags: string[];
   description: string;
   applyUrl: string;
-  status: "new" | "pending" | "applied" | "saved" | "skipped";
+  status: "new" | "pending" | "cv_requested" | "saved" | "skipped";
 }
 
 interface BackendJob {
@@ -58,7 +58,56 @@ interface BackendJob {
 
 const SOURCES = ["All Sources", "LinkedIn", "Indeed", "Glassdoor", "ZipRecruiter", "Company Sites"];
 const WORK_MODES = ["All Modes", "Remote", "Hybrid", "On-site"];
-const SORT_OPTIONS = ["Match Score", "Date Posted", "Salary (High)", "Salary (Low)"];
+const SORT_OPTIONS = ["Date Posted", "Salary (High)", "Salary (Low)"];
+
+function workModePillClass(mode: string): string {
+  switch (mode) {
+    case "Remote":
+      return "border-emerald-500/30 bg-emerald-500/10 text-emerald-200/95";
+    case "Hybrid":
+      return "border-[#6C63FF]/35 bg-[#6C63FF]/12 text-[#D4D0FF]";
+    case "On-site":
+      return "border-amber-500/25 bg-amber-500/10 text-amber-100/90";
+    default:
+      return "border-[#2E2E4A] bg-[#0F0F1A] text-[#8888AA]";
+  }
+}
+
+function JobCompanyAvatar({
+  company,
+  logoUrl,
+  size = "md",
+}: {
+  company: string;
+  logoUrl: string | null;
+  size?: "sm" | "md";
+}) {
+  const box = size === "sm" ? "h-10 w-10 rounded-lg text-xs" : "h-12 w-12 rounded-xl text-sm";
+  if (logoUrl) {
+    return (
+      <img
+        src={logoUrl}
+        alt=""
+        className={cn("shrink-0 border border-[#2E2E4A] bg-[#0F0F1A] object-cover", box)}
+      />
+    );
+  }
+  return (
+    <div
+      className={cn("flex shrink-0 items-center justify-center border border-[#2E2E4A] font-bold text-white", box)}
+      style={{ background: generateGradient(company) }}
+      aria-hidden
+    >
+      {getInitials(company)}
+    </div>
+  );
+}
+
+function postedDateToMs(iso?: string | null): number {
+  if (!iso) return 0;
+  const t = new Date(iso).getTime();
+  return Number.isNaN(t) ? 0 : t;
+}
 
 function normalizeSource(source?: string | null): string {
   if (!source) return "Unknown";
@@ -94,10 +143,11 @@ function mapApiJobToView(job: BackendJob): Job {
     id: String(job.id),
     title: job.title,
     company: job.company,
+    companyLogoUrl: job.company_logo_url?.trim() || null,
     location: job.location ?? "Location not specified",
     workMode: normalizeWorkMode(job.work_mode),
     salary: formatSalary(job.salary_min ?? undefined, job.salary_max ?? undefined, job.salary_currency ?? "USD"),
-    matchScore: 75,
+    postedAtMs: postedDateToMs(job.posted_date),
     postedAgo,
     source: normalizeSource(job.source),
     tags,
@@ -105,13 +155,6 @@ function mapApiJobToView(job: BackendJob): Job {
     applyUrl: job.apply_url ?? "",
     status: "new",
   };
-}
-
-function getScoreColor(score: number): string {
-  if (score >= 85) return "#00D4AA";
-  if (score >= 70) return "#6C63FF";
-  if (score >= 55) return "#FFD93D";
-  return "#FF6B6B";
 }
 
 const PER_PAGE = 20;
@@ -128,29 +171,19 @@ export default function JobsPage() {
   const [search, setSearch] = useState("");
   const [sourceFilter, setSourceFilter] = useState("All Sources");
   const [modeFilter, setModeFilter] = useState("All Modes");
-  const [minScore, setMinScore] = useState(50);
-  const [sortBy, setSortBy] = useState("Match Score");
-  const [showFilters, setShowFilters] = useState(false);
+  const [sortBy, setSortBy] = useState("Date Posted");
   const [applyingId, setApplyingId] = useState<string | null>(null);
-  const [actionedJobs, setActionedJobs] = useState<Record<string, "applied" | "skipped" | "saved">>({});
+  const [actionedJobs, setActionedJobs] = useState<Record<string, "cv_requested" | "skipped" | "saved">>({});
   const [matchMyPreferences, setMatchMyPreferences] = useState(false);
 
-  async function handleApply(job: Job) {
+  async function handleRequestTailoredCv(job: Job) {
     setApplyingId(job.id);
     try {
-      await applications.create(job.id);
-      setActionedJobs((prev) => ({ ...prev, [job.id]: "applied" }));
-      if (job.applyUrl) {
-        window.open(job.applyUrl, "_blank", "noopener");
-      }
+      await jobs.requestTailoredCv(job.id);
+      setActionedJobs((prev) => ({ ...prev, [job.id]: "cv_requested" }));
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes("409") || msg.includes("Already applied")) {
-        setActionedJobs((prev) => ({ ...prev, [job.id]: "applied" }));
-        if (job.applyUrl) window.open(job.applyUrl, "_blank", "noopener");
-      } else {
-        alert("Failed to apply: " + msg);
-      }
+      const msg = err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err);
+      alert("Could not queue tailored CV: " + msg);
     } finally {
       setApplyingId(null);
     }
@@ -222,19 +255,21 @@ export default function JobsPage() {
   }, [page, search, sourceFilter, modeFilter, matchMyPreferences]);
 
   const filtered = useMemo(() => {
-    let jobs = [...allJobs];
-    jobs = jobs.filter((j) => j.matchScore >= minScore);
+    const jobs = [...allJobs];
     jobs.sort((a, b) => {
       switch (sortBy) {
-        case "Match Score": return b.matchScore - a.matchScore;
-        case "Date Posted": return 0;
-        case "Salary (High)": return b.salary.localeCompare(a.salary);
-        case "Salary (Low)": return a.salary.localeCompare(b.salary);
-        default: return 0;
+        case "Date Posted":
+          return b.postedAtMs - a.postedAtMs;
+        case "Salary (High)":
+          return b.salary.localeCompare(a.salary);
+        case "Salary (Low)":
+          return a.salary.localeCompare(b.salary);
+        default:
+          return 0;
       }
     });
     return jobs;
-  }, [allJobs, minScore, sortBy]);
+  }, [allJobs, sortBy]);
 
   const paged = filtered;
 
@@ -329,19 +364,6 @@ export default function JobsPage() {
           <span>Match my preferences</span>
         </label>
 
-        <button
-          onClick={() => setShowFilters(!showFilters)}
-          className={cn(
-            "flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm transition-colors",
-            showFilters
-              ? "border-[#6C63FF] bg-[#6C63FF]/10 text-[#6C63FF]"
-              : "border-[#2E2E4A] text-[#8888AA] hover:border-[#6C63FF]/50"
-          )}
-        >
-          <SlidersHorizontal className="h-4 w-4" />
-          Filters
-        </button>
-
         <select
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value)}
@@ -351,39 +373,23 @@ export default function JobsPage() {
             <option key={s}>{s}</option>
           ))}
         </select>
-      </div>
 
-      {/* Extended Filters */}
-      {showFilters && (
-        <div className="flex flex-wrap items-center gap-4 rounded-xl border border-[#2E2E4A] bg-[#1A1A2E] p-4">
-          <div className="flex items-center gap-3">
-            <label className="text-sm text-[#8888AA]">Min Match Score:</label>
-            <input
-              type="range"
-              min={30}
-              max={95}
-              value={minScore}
-              onChange={(e) => { setMinScore(parseInt(e.target.value)); setPage(1); }}
-              className="w-32 accent-[#6C63FF]"
-            />
-            <span className="text-sm font-medium text-[#F0F0FF]">{minScore}%</span>
-          </div>
-          <button
-            onClick={() => {
-              setSearch("");
-              setSourceFilter("All Sources");
-              setModeFilter("All Modes");
-              setMinScore(50);
-              setSortBy("Match Score");
-              setPage(1);
-            }}
-            className="flex items-center gap-1 text-sm text-[#FF6B6B] hover:text-[#FF6B6B]/80"
-          >
-            <X className="h-3.5 w-3.5" />
-            Reset filters
-          </button>
-        </div>
-      )}
+        <button
+          type="button"
+          onClick={() => {
+            setSearch("");
+            setSourceFilter("All Sources");
+            setModeFilter("All Modes");
+            setSortBy("Date Posted");
+            setMatchMyPreferences(false);
+            setPage(1);
+          }}
+          className="flex items-center gap-1 rounded-lg border border-[#2E2E4A] px-3 py-2 text-sm text-[#8888AA] transition-colors hover:border-[#FF6B6B]/30 hover:text-[#FF8A8A]"
+        >
+          <X className="h-3.5 w-3.5" />
+          Reset
+        </button>
+      </div>
 
       {/* Job List */}
       {error && (
@@ -393,209 +399,281 @@ export default function JobsPage() {
       )}
       {view === "list" ? (
         <div className="space-y-3">
-          {paged.map((job) => (
-            <div
-              key={job.id}
-              className="group rounded-xl border border-[#2E2E4A] bg-[#1A1A2E] p-5 transition-colors hover:border-[#6C63FF]/30"
-            >
-              <div className="flex items-start gap-4">
-                <div className="hidden sm:block">
-                  <MatchScoreRing score={Math.round(job.matchScore)} size={48} />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      {job.applyUrl ? (
-                        <a
-                          href={job.applyUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-base font-semibold text-[#F0F0FF] hover:text-[#6C63FF]"
+          {paged.map((job) => {
+            const rowStatus = getJobStatus(job);
+            return (
+              <article
+                key={job.id}
+                className="overflow-hidden rounded-xl border border-[#2E2E4A] bg-[#1A1A2E] shadow-sm transition-all hover:border-[#6C63FF]/40 hover:shadow-[0_8px_32px_rgba(0,0,0,0.28)]"
+              >
+                <div className="p-4 sm:p-5">
+                  <div className="flex gap-4">
+                    <JobCompanyAvatar company={job.company} logoUrl={job.companyLogoUrl} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                        <div className="min-w-0">
+                          <h2 className="text-lg font-semibold leading-snug text-[#F0F0FF]">{job.title}</h2>
+                          <p className="mt-1 inline-flex min-w-0 items-center gap-1.5 text-sm text-[#8888AA]">
+                            <Building2 className="h-3.5 w-3.5 shrink-0 text-[#6C63FF]/70" />
+                            <span className="truncate font-medium text-[#C4C4E6]">{job.company}</span>
+                          </p>
+                        </div>
+                        {job.applyUrl ? (
+                          <a
+                            href={job.applyUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex shrink-0 items-center gap-1.5 self-start rounded-lg border border-[#2E2E4A] bg-[#0F0F1A] px-3 py-1.5 text-xs font-medium text-[#B8B3FF] transition-colors hover:border-[#6C63FF]/50 hover:bg-[#6C63FF]/10"
+                          >
+                            <ExternalLink className="h-3.5 w-3.5" />
+                            View posting
+                          </a>
+                        ) : null}
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <span
+                          className={cn(
+                            "inline-flex items-center rounded-lg border px-2.5 py-1 text-xs font-medium",
+                            workModePillClass(job.workMode)
+                          )}
                         >
-                          {job.title}
-                        </a>
-                      ) : (
-                        <span className="text-base font-semibold text-[#F0F0FF]">
-                          {job.title}
+                          {job.workMode}
                         </span>
-                      )}
-                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-[#8888AA]">
-                        <span className="flex items-center gap-1">
-                          <Building2 className="h-3.5 w-3.5" />
-                          {job.company}
+                        <span className="inline-flex max-w-full items-center gap-1 rounded-lg border border-[#2E2E4A] bg-[#0F0F1A] px-2.5 py-1 text-xs text-[#A8A8CC]">
+                          <MapPin className="h-3 w-3 shrink-0 opacity-70" />
+                          <span className="truncate">{job.location}</span>
                         </span>
-                        <span className="flex items-center gap-1">
-                          <MapPin className="h-3.5 w-3.5" />
-                          {job.location}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Briefcase className="h-3.5 w-3.5" />
+                        <span className="inline-flex items-center gap-1 rounded-lg border border-[#2E2E4A] bg-[#0F0F1A] px-2.5 py-1 text-xs text-[#A8A8CC]">
+                          <DollarSign className="h-3 w-3 shrink-0 opacity-70" />
                           {job.salary}
                         </span>
-                        <span className="flex items-center gap-1">
-                          <Clock className="h-3.5 w-3.5" />
+                        <span className="inline-flex items-center gap-1 rounded-lg border border-[#2E2E4A] bg-[#0F0F1A] px-2.5 py-1 text-xs text-[#8A86B8]">
+                          <Clock className="h-3 w-3 shrink-0" />
                           {job.postedAgo}
                         </span>
+                        <span className="inline-flex items-center rounded-lg border border-[#6C63FF]/25 bg-[#6C63FF]/10 px-2.5 py-1 text-xs font-medium text-[#B8B3FF]">
+                          {job.source}
+                        </span>
                       </div>
+
+                      {job.description && job.description !== "No description provided." && (
+                        <p className="mt-3 line-clamp-2 text-sm leading-relaxed text-[#6B6B90]">{job.description}</p>
+                      )}
+
+                      {job.tags.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-1.5">
+                          {job.tags.map((tag) => (
+                            <span
+                              key={tag}
+                              className="rounded-md border border-[#2E2E4A] bg-[#0F0F1A]/90 px-2 py-0.5 text-[11px] text-[#A8A8CC]"
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                    <span
-                      className="shrink-0 text-lg font-bold sm:hidden"
-                      style={{ color: getScoreColor(job.matchScore) }}
-                    >
-                      {Math.round(job.matchScore)}%
-                    </span>
                   </div>
 
-                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                    {job.tags.map((tag) => (
-                      <span
-                        key={tag}
-                        className="rounded-md bg-[#252540] px-2 py-0.5 text-xs text-[#8888AA]"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                    <span className="rounded-md bg-[#6C63FF]/10 px-2 py-0.5 text-xs text-[#6C63FF]">
-                      {job.source}
-                    </span>
-                  </div>
-
-                  <div className="mt-3 flex items-center gap-2">
-                    {(() => {
-                      const s = getJobStatus(job);
-                      if (s === "applied") return (
-                        <span className="rounded-md bg-[#00D4AA]/10 px-2.5 py-1 text-xs font-medium text-[#00D4AA]">
-                          Applied
+                  <div className="mt-4 flex flex-col gap-3 border-t border-[#2E2E4A]/60 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex flex-wrap gap-2">
+                      {rowStatus === "saved" ? (
+                        <span className="inline-flex items-center gap-1.5 rounded-lg bg-[#6C63FF]/10 px-3 py-2 text-xs font-medium text-[#B8B3FF]">
+                          <Bookmark className="h-3.5 w-3.5" />
+                          Saved for later
                         </span>
-                      );
-                      if (s === "saved") return (
-                        <span className="rounded-md bg-[#6C63FF]/10 px-2.5 py-1 text-xs font-medium text-[#6C63FF]">
-                          Saved
-                        </span>
-                      );
-                      if (s === "skipped") return (
-                        <span className="rounded-md bg-[#55557A]/10 px-2.5 py-1 text-xs font-medium text-[#55557A]">
+                      ) : rowStatus === "skipped" ? (
+                        <span className="inline-flex items-center gap-1.5 rounded-lg bg-[#252540] px-3 py-2 text-xs font-medium text-[#8888AA]">
+                          <XCircle className="h-3.5 w-3.5" />
                           Skipped
                         </span>
-                      );
-                      return (
+                      ) : (
                         <>
                           <button
-                            disabled={applyingId === job.id}
-                            onClick={() => handleApply(job)}
-                            className="flex items-center gap-1.5 rounded-lg bg-[#6C63FF] px-3.5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-[#5A52E0] disabled:opacity-50"
+                            type="button"
+                            onClick={() => handleSave(job.id)}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-[#2E2E4A] bg-[#0F0F1A] px-3 py-2 text-xs font-medium text-[#C8C8E0] transition-colors hover:border-[#6C63FF]/45 hover:text-[#F0F0FF]"
                           >
-                            {applyingId === job.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-                            {applyingId === job.id ? "Applying..." : "Apply"}
+                            <Bookmark className="h-3.5 w-3.5" />
+                            Save for later
                           </button>
                           <button
+                            type="button"
+                            onClick={() => handleSkip(job.id)}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-[#FF6B6B]/25 bg-transparent px-3 py-2 text-xs font-medium text-[#FF8A8A] transition-colors hover:bg-[#FF6B6B]/10"
+                          >
+                            <XCircle className="h-3.5 w-3.5" />
+                            Not interested
+                          </button>
+                        </>
+                      )}
+                    </div>
+
+                    <div className="flex w-full flex-col gap-1 sm:w-auto sm:min-w-[14rem] sm:items-stretch">
+                      <p className="text-[11px] leading-snug text-[#55557A] sm:text-right">
+                        Emails you a tailored CV PDF and this job&apos;s apply link.
+                      </p>
+                      <button
+                        type="button"
+                        disabled={applyingId === job.id}
+                        onClick={() => void handleRequestTailoredCv(job)}
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#6C63FF] px-4 py-3 text-sm font-semibold text-white shadow-md transition-colors hover:bg-[#5A52E0] disabled:opacity-50 sm:py-2.5"
+                      >
+                        {applyingId === job.id ? (
+                          <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                        ) : (
+                          <Mail className="h-4 w-4 shrink-0" />
+                        )}
+                        {applyingId === job.id ? "Sending…" : "Email CV + posting link"}
+                      </button>
+                      {rowStatus === "cv_requested" && (
+                        <p className="text-center text-[11px] font-medium text-[#00D4AA] sm:text-right">
+                          Queued — check your inbox
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {paged.map((job) => {
+            const cardStatus = getJobStatus(job);
+            return (
+              <article
+                key={job.id}
+                className="flex h-full flex-col overflow-hidden rounded-xl border border-[#2E2E4A] bg-[#1A1A2E] shadow-sm transition-all hover:border-[#6C63FF]/40 hover:shadow-[0_8px_28px_rgba(0,0,0,0.25)]"
+              >
+                <div className="flex items-start justify-between gap-3 border-b border-[#2E2E4A]/60 bg-[#0F0F1A]/35 px-4 py-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <JobCompanyAvatar company={job.company} logoUrl={job.companyLogoUrl} size="sm" />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-[#C4C4E6]">{job.company}</p>
+                      <span className="mt-0.5 inline-flex items-center rounded-md border border-[#6C63FF]/25 bg-[#6C63FF]/10 px-2 py-0.5 text-[10px] font-medium text-[#B8B3FF]">
+                        {job.source}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-1 flex-col px-4 pb-4 pt-4">
+                  <h3 className="line-clamp-2 text-base font-semibold leading-snug text-[#F0F0FF]">{job.title}</h3>
+
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    <span
+                      className={cn(
+                        "inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-medium",
+                        workModePillClass(job.workMode)
+                      )}
+                    >
+                      {job.workMode}
+                    </span>
+                    <span className="inline-flex items-center gap-0.5 rounded-md border border-[#2E2E4A] bg-[#0F0F1A] px-2 py-0.5 text-[11px] text-[#8A8AB0]">
+                      <MapPin className="h-3 w-3 shrink-0" />
+                      <span className="max-w-[10rem] truncate">{job.location}</span>
+                    </span>
+                  </div>
+
+                  <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[#6B6B90]">
+                    <span className="inline-flex items-center gap-0.5">
+                      <DollarSign className="h-3 w-3" />
+                      {job.salary}
+                    </span>
+                    <span className="inline-flex items-center gap-0.5">
+                      <Clock className="h-3 w-3" />
+                      {job.postedAgo}
+                    </span>
+                  </div>
+
+                  {job.applyUrl ? (
+                    <a
+                      href={job.applyUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-3 inline-flex w-fit items-center gap-1 text-xs font-medium text-[#6C63FF] hover:text-[#8B84FF]"
+                    >
+                      View posting
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  ) : null}
+
+                  {job.tags.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-1">
+                      {job.tags.slice(0, 4).map((tag) => (
+                        <span
+                          key={tag}
+                          className="rounded border border-[#2E2E4A] bg-[#0F0F1A]/80 px-1.5 py-0.5 text-[10px] text-[#9A9AB8]"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="mt-auto flex flex-col gap-3 border-t border-[#2E2E4A]/50 pt-4">
+                    <p className="text-center text-[10px] leading-snug text-[#55557A]">
+                      PDF + apply link to your inbox
+                    </p>
+                    <button
+                      type="button"
+                      disabled={applyingId === job.id}
+                      onClick={() => void handleRequestTailoredCv(job)}
+                      className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#6C63FF] px-3 py-2.5 text-xs font-semibold text-white shadow-md transition-colors hover:bg-[#5A52E0] disabled:opacity-50"
+                    >
+                      {applyingId === job.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Mail className="h-4 w-4" />
+                      )}
+                      {applyingId === job.id ? "Sending…" : "Email CV + posting link"}
+                    </button>
+                    {cardStatus === "cv_requested" && (
+                      <p className="text-center text-[11px] font-medium text-[#00D4AA]">Queued — check inbox</p>
+                    )}
+
+                    <div className="flex gap-2">
+                      {cardStatus === "saved" ? (
+                        <span className="flex w-full items-center justify-center gap-1 rounded-lg bg-[#6C63FF]/10 py-2 text-xs font-medium text-[#B8B3FF]">
+                          <Bookmark className="h-3.5 w-3.5" />
+                          Saved
+                        </span>
+                      ) : cardStatus === "skipped" ? (
+                        <span className="flex w-full items-center justify-center gap-1 rounded-lg bg-[#252540] py-2 text-xs font-medium text-[#8888AA]">
+                          <XCircle className="h-3.5 w-3.5" />
+                          Skipped
+                        </span>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
                             onClick={() => handleSave(job.id)}
-                            className="flex items-center gap-1.5 rounded-lg border border-[#2E2E4A] px-3 py-1.5 text-xs text-[#8888AA] transition-colors hover:border-[#6C63FF]/50"
+                            className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg border border-[#2E2E4A] bg-[#0F0F1A] py-2 text-xs font-medium text-[#C8C8E0] transition-colors hover:border-[#6C63FF]/45"
+                            title="Save for later"
                           >
                             <Bookmark className="h-3.5 w-3.5" />
                             Save
                           </button>
                           <button
+                            type="button"
                             onClick={() => handleSkip(job.id)}
-                            className="flex items-center gap-1.5 rounded-lg border border-[#FF6B6B]/30 px-3 py-1.5 text-xs text-[#FF6B6B] transition-colors hover:bg-[#FF6B6B]/10"
+                            className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg border border-[#FF6B6B]/25 py-2 text-xs font-medium text-[#FF8A8A] transition-colors hover:bg-[#FF6B6B]/10"
+                            title="Not interested"
                           >
                             <XCircle className="h-3.5 w-3.5" />
                             Skip
                           </button>
                         </>
-                      );
-                    })()}
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {paged.map((job) => (
-            <div
-              key={job.id}
-              className="group flex flex-col rounded-xl border border-[#2E2E4A] bg-[#1A1A2E] p-5 transition-colors hover:border-[#6C63FF]/30"
-            >
-              <div className="flex items-center justify-between">
-                <span
-                  className="text-xl font-bold"
-                  style={{ color: getScoreColor(job.matchScore) }}
-                >
-                  {Math.round(job.matchScore)}%
-                </span>
-                <span className="rounded-md bg-[#6C63FF]/10 px-2 py-0.5 text-xs text-[#6C63FF]">
-                  {job.source}
-                </span>
-              </div>
-              {job.applyUrl ? (
-                <a
-                  href={job.applyUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-3 text-base font-semibold text-[#F0F0FF] hover:text-[#6C63FF]"
-                >
-                  {job.title}
-                </a>
-              ) : (
-                <span className="mt-3 text-base font-semibold text-[#F0F0FF]">
-                  {job.title}
-                </span>
-              )}
-              <p className="mt-1 text-sm text-[#8888AA]">
-                {job.company} · {job.location}
-              </p>
-              <p className="mt-1 text-sm text-[#8888AA]">{job.salary}</p>
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {job.tags.slice(0, 4).map((tag) => (
-                  <span
-                    key={tag}
-                    className="rounded-md bg-[#252540] px-2 py-0.5 text-xs text-[#8888AA]"
-                  >
-                    {tag}
-                  </span>
-                ))}
-              </div>
-              <div className="mt-auto flex items-center gap-2 pt-4">
-                {(() => {
-                  const s = getJobStatus(job);
-                  if (s === "applied") return (
-                    <span className="flex-1 rounded-lg bg-[#00D4AA]/10 py-1.5 text-center text-xs font-medium text-[#00D4AA]">Applied</span>
-                  );
-                  if (s === "saved") return (
-                    <span className="flex-1 rounded-lg bg-[#6C63FF]/10 py-1.5 text-center text-xs font-medium text-[#6C63FF]">Saved</span>
-                  );
-                  if (s === "skipped") return (
-                    <span className="flex-1 rounded-lg bg-[#55557A]/10 py-1.5 text-center text-xs font-medium text-[#55557A]">Skipped</span>
-                  );
-                  return (
-                    <>
-                      <button
-                        disabled={applyingId === job.id}
-                        onClick={() => handleApply(job)}
-                        className="flex-1 rounded-lg bg-[#6C63FF] py-1.5 text-xs font-semibold text-white hover:bg-[#5A52E0] disabled:opacity-50"
-                      >
-                        {applyingId === job.id ? "Applying..." : "Apply"}
-                      </button>
-                      <button
-                        onClick={() => handleSave(job.id)}
-                        className="rounded-lg border border-[#2E2E4A] p-1.5 text-[#8888AA] hover:border-[#6C63FF]/50"
-                      >
-                        <Bookmark className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        onClick={() => handleSkip(job.id)}
-                        className="rounded-lg border border-[#FF6B6B]/30 p-1.5 text-[#FF6B6B] hover:bg-[#FF6B6B]/10"
-                      >
-                        <XCircle className="h-3.5 w-3.5" />
-                      </button>
-                    </>
-                  );
-                })()}
-              </div>
-            </div>
-          ))}
+              </article>
+            );
+          })}
         </div>
       )}
 

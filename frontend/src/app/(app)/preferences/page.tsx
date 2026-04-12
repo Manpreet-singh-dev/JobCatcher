@@ -204,8 +204,6 @@ interface Prefs {
   activeHoursEnd: string;
   timezone: string;
   maxApplicationsPerDay: number;
-  approvalMode: "always_ask" | "auto_high" | "fully_automatic";
-  fullyAutoConsent: boolean;
   notifyEmail: boolean;
   notifyWhatsApp: boolean;
 }
@@ -234,8 +232,6 @@ const defaultPrefs: Prefs = {
   activeHoursEnd: "17:00",
   timezone: "UTC-5 (EST)",
   maxApplicationsPerDay: 5,
-  approvalMode: "always_ask",
-  fullyAutoConsent: false,
   notifyEmail: true,
   notifyWhatsApp: false,
 };
@@ -276,7 +272,6 @@ export default function PreferencesPage() {
             preferredCompanies: data.preferred_companies || prev.preferredCompanies,
             minMatchScore: data.min_match_score ?? prev.minMatchScore,
             maxApplicationsPerDay: data.max_applications_per_day ?? prev.maxApplicationsPerDay,
-            approvalMode: data.approval_mode ?? prev.approvalMode,
             timezone: data.agent_timezone ?? prev.timezone,
           }));
         }
@@ -324,7 +319,6 @@ export default function PreferencesPage() {
         blacklisted_companies: prefs.blacklistedCompanies,
         min_match_score: prefs.minMatchScore,
         max_applications_per_day: prefs.maxApplicationsPerDay,
-        approval_mode: prefs.approvalMode,
         agent_timezone: prefs.timezone,
       } as Record<string, unknown>);
       setSaved(true);
@@ -353,7 +347,7 @@ export default function PreferencesPage() {
         <div>
           <h1 className="text-2xl font-bold text-[#F0F0FF]">Preferences</h1>
           <p className="text-sm text-[#8888AA]">
-            Configure your job search criteria and agent behavior
+            Configure your job search criteria and how we match roles to you
           </p>
         </div>
         <button
@@ -379,7 +373,7 @@ export default function PreferencesPage() {
 
       <div className="flex items-center gap-2 rounded-xl border border-[#6C63FF]/20 bg-[#6C63FF]/5 px-4 py-3 text-sm text-[#6C63FF]">
         <AlertCircle className="h-4 w-4 shrink-0" />
-        Changes take effect on the next agent scan cycle.
+        Changes apply the next time you browse jobs or request a tailored CV.
       </div>
 
       {/* Job Basics */}
@@ -569,36 +563,6 @@ export default function PreferencesPage() {
               <button type="button" onClick={() => update("maxApplicationsPerDay", Math.min(20, prefs.maxApplicationsPerDay + 1))} className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#2E2E4A] bg-[#0F0F1A] text-[#F0F0FF] hover:bg-[#252540]">+</button>
               <span className="text-sm text-[#55557A]">per day</span>
             </div>
-          </div>
-
-          <div>
-            <label className="mb-3 block text-sm font-medium text-[#8888AA]">Approval Mode</label>
-            <div className="space-y-3">
-              {([
-                { value: "always_ask", title: "Always Ask", desc: "Email approval for every application" },
-                { value: "auto_high", title: "Auto-Apply High Confidence", desc: "≥90% match applies without approval" },
-                { value: "fully_automatic", title: "Fully Automatic", desc: "All matched jobs applied automatically" },
-              ] as const).map((mode) => (
-                <label key={mode.value} className={cn(
-                  "flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors",
-                  prefs.approvalMode === mode.value
-                    ? "border-[#6C63FF] bg-[#6C63FF]/10"
-                    : "border-[#2E2E4A] bg-[#0F0F1A] hover:border-[#6C63FF]/50"
-                )}>
-                  <input type="radio" name="approvalMode" checked={prefs.approvalMode === mode.value} onChange={() => update("approvalMode", mode.value)} className="mt-0.5 accent-[#6C63FF]" />
-                  <div>
-                    <p className="text-sm font-medium text-[#F0F0FF]">{mode.title}</p>
-                    <p className="mt-0.5 text-xs text-[#8888AA]">{mode.desc}</p>
-                  </div>
-                </label>
-              ))}
-            </div>
-            {prefs.approvalMode === "fully_automatic" && (
-              <label className="mt-3 flex items-start gap-2 rounded-xl border border-[#FFD93D]/20 bg-[#FFD93D]/5 p-3">
-                <input type="checkbox" checked={prefs.fullyAutoConsent} onChange={(e) => update("fullyAutoConsent", e.target.checked)} className="mt-0.5 accent-[#FFD93D]" />
-                <span className="text-xs text-[#FFD93D]">I consent to fully automatic applications without review.</span>
-              </label>
-            )}
           </div>
 
           <div>

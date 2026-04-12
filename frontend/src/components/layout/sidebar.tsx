@@ -8,26 +8,23 @@ import {
   Briefcase,
   FileText,
   FileUp,
-  Bot,
+  FilePenLine,
   Settings,
-  BarChart3,
   PanelLeftClose,
   PanelLeft,
   Sparkles,
   Zap,
 } from "lucide-react";
-import { AgentStatusWidget } from "@/components/agent-status-widget";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/lib/store";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/jobs", label: "Jobs Feed", icon: Briefcase },
+  { href: "/tailor-cv", label: "CV from posting", icon: FilePenLine },
   { href: "/applications", label: "My Applications", icon: FileText },
   { href: "/resumes", label: "Resume Manager", icon: FileUp },
-  { href: "/agent", label: "Agent Settings", icon: Bot },
   { href: "/preferences", label: "Preferences", icon: Settings },
-  { href: "/analytics", label: "Analytics", icon: BarChart3 },
 ];
 
 interface SidebarProps {
@@ -36,7 +33,7 @@ interface SidebarProps {
 
 function Sidebar({ className }: SidebarProps) {
   const pathname = usePathname();
-  const { sidebarCollapsed, toggleSidebar, agentStatus, user } = useAppStore();
+  const { sidebarCollapsed, toggleSidebar, user } = useAppStore();
 
   return (
     <aside
@@ -115,14 +112,6 @@ function Sidebar({ className }: SidebarProps) {
         </ul>
       </nav>
 
-      {/* Agent Status Widget */}
-      <div className="px-3 pb-3">
-        <AgentStatusWidget
-          status={agentStatus}
-          collapsed={sidebarCollapsed}
-        />
-      </div>
-
       {/* Upgrade CTA (for free users) */}
       {user?.plan === "free" && !sidebarCollapsed && (
         <div className="mx-3 mb-3 rounded-md border border-primary/20 bg-primary/5 p-3">
@@ -131,7 +120,7 @@ function Sidebar({ className }: SidebarProps) {
             <span className="text-sm font-medium text-text-primary">Upgrade to Pro</span>
           </div>
           <p className="text-xs text-text-muted mb-2.5">
-            Unlock unlimited applications, advanced analytics, and priority support.
+            Unlock unlimited applications and priority support.
           </p>
           <Link
             href="/pricing"

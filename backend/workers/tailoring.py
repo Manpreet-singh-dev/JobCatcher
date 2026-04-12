@@ -1,10 +1,13 @@
 import json
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any
 
+from sqlalchemy import delete, select
+
 from workers.celery_app import celery_app, get_db, run_async
+from workers.matching import MATCH_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -44,26 +47,52 @@ Return ONLY the tailored resume as valid JSON matching the original schema. No e
     default_retry_delay=60,
     acks_late=True,
 )
-def tailor_resume_for_job(self, user_id: str, job_id: str, match_analysis: dict[str, Any]):
-    """Tailor a user's base resume for a specific job, create an application, and send approval email."""
+def tailor_resume_for_job(
+    self,
+    user_id: str,
+    job_id: str,
+    match_analysis: dict[str, Any] | None = None,
+):
+    """Tailor a user's base resume for a job, store it, and email a PDF to the user."""
 
     async def _run():
-        from sqlalchemy import select
-        from sqlalchemy.orm import selectinload
-
-        from app.core.security import create_approval_token
         from app.models.application import Application
         from app.models.job import Job
         from app.models.resume import Resume
         from app.models.user import User
         from app.services.ai.service import AIService
 
+        uid = uuid.UUID(user_id)
+        jid = uuid.UUID(job_id)
+
         async with get_db() as db:
-            user_result = await db.execute(
-                select(User)
-                .options(selectinload(User.preferences))
-                .where(User.id == user_id)
+            await db.execute(
+                delete(Application).where(
+                    Application.user_id == uid,
+                    Application.job_id == jid,
+                    Application.tailored_resume_id.is_(None),
+                )
             )
+
+            existing_result = await db.execute(
+                select(Application)
+                .where(
+                    Application.user_id == uid,
+                    Application.job_id == jid,
+                    Application.tailored_resume_id.isnot(None),
+                )
+                .order_by(Application.created_at.desc())
+                .limit(1)
+            )
+            existing_app = existing_result.scalar_one_or_none()
+            if existing_app:
+                from workers.notifications import send_tailored_cv_email
+
+                send_tailored_cv_email.delay(str(existing_app.id))
+                logger.info("Resent tailored CV email for application %s", existing_app.id)
+                return {"status": "resent", "application_id": str(existing_app.id)}
+
+            user_result = await db.execute(select(User).where(User.id == user_id))
             user = user_result.scalar_one_or_none()
             if not user:
                 logger.error("User %s not found for tailoring", user_id)
@@ -88,6 +117,22 @@ def tailor_resume_for_job(self, user_id: str, job_id: str, match_analysis: dict[
 
             ai = AIService()
 
+            if match_analysis is None:
+                try:
+                    prompt = MATCH_PROMPT.format(
+                        candidate_json=json.dumps(base_resume.parsed_json, indent=2),
+                        job_title=job.title,
+                        company=job.company,
+                        location=job.location or "Not specified",
+                        job_description=job.description or "No description available",
+                        required_skills=", ".join(job.required_skills or []),
+                    )
+                    response_text = await ai._call_llm(prompt)
+                    match_analysis = ai._extract_json(response_text)
+                except Exception:
+                    logger.error("AI scoring failed for job %s (on-demand tailor)", job_id, exc_info=True)
+                    return {"status": "error", "reason": "ai_match_failed"}
+
             try:
                 prompt = TAILOR_PROMPT.format(
                     resume_json=json.dumps(base_resume.parsed_json, indent=2),
@@ -106,7 +151,7 @@ def tailor_resume_for_job(self, user_id: str, job_id: str, match_analysis: dict[
 
             tailored_resume = Resume(
                 id=uuid.uuid4(),
-                user_id=uuid.UUID(user_id),
+                user_id=uid,
                 version_name=f"Tailored for {job.title} at {job.company}",
                 is_base=False,
                 parsed_json=tailored_json,
@@ -116,57 +161,38 @@ def tailor_resume_for_job(self, user_id: str, job_id: str, match_analysis: dict[
             await db.flush()
 
             score = match_analysis.get("match_score", 0)
-            now = datetime.now(timezone.utc)
-            expires_at = now + timedelta(hours=48)
 
             application = Application(
                 id=uuid.uuid4(),
-                user_id=uuid.UUID(user_id),
-                job_id=uuid.UUID(job_id),
+                user_id=uid,
+                job_id=jid,
                 resume_id=base_resume.id,
                 tailored_resume_id=tailored_resume.id,
                 match_score=score,
                 match_analysis=match_analysis,
-                status="pending_approval",
-                approval_token_expires_at=expires_at,
+                status="cv_emailed",
+                approval_token=None,
+                approval_token_expires_at=None,
             )
-
-            approval_token = create_approval_token(
-                user_id=user_id,
-                application_id=str(application.id),
-                action="approve",
-            )
-            application.approval_token = approval_token
 
             db.add(application)
             await db.flush()
 
-            prefs = user.preferences
-            if prefs and prefs.approval_mode == "auto_approve" and score >= (prefs.min_match_score or 75):
-                application.status = "approved"
-                application.approval_action_at = now
-                await db.flush()
+            from workers.notifications import send_tailored_cv_email
 
-                from workers.application_bot import submit_application
-                submit_application.delay(str(application.id))
-                logger.info(
-                    "Auto-approved application %s (score %d) for user %s",
-                    application.id, score, user_id,
-                )
-            else:
-                from workers.notifications import send_approval_email
-                send_approval_email.delay(str(application.id))
-                logger.info(
-                    "Approval email queued for application %s (score %d)",
-                    application.id, score,
-                )
+            send_tailored_cv_email.delay(str(application.id))
+            logger.info(
+                "Tailored CV queued for email — application %s (score %d) user %s",
+                application.id,
+                score,
+                user_id,
+            )
 
             return {
                 "status": "completed",
                 "application_id": str(application.id),
                 "tailored_resume_id": str(tailored_resume.id),
                 "match_score": score,
-                "auto_approved": application.status == "approved",
             }
 
     try:
@@ -174,6 +200,8 @@ def tailor_resume_for_job(self, user_id: str, job_id: str, match_analysis: dict[
     except Exception as exc:
         logger.error(
             "tailor_resume_for_job failed for user %s, job %s",
-            user_id, job_id, exc_info=True,
+            user_id,
+            job_id,
+            exc_info=True,
         )
         raise self.retry(exc=exc)

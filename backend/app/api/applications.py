@@ -4,7 +4,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import Select, func, select
+from fastapi.responses import RedirectResponse
+from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
@@ -13,6 +14,7 @@ from app.core.database import get_db
 from app.core.security import (
     create_approval_token,
     get_current_user,
+    verify_applied_confirm_token,
     verify_approval_token,
 )
 from app.models.application import Application
@@ -29,42 +31,87 @@ router = APIRouter(prefix="/api/applications", tags=["applications"])
 
 
 def _apply_application_filters(
-    query: Select,
+    stmt: Select,
     user_id: uuid.UUID,
     app_status: str | None,
     min_match_score: int | None,
     max_match_score: int | None,
     created_after: datetime | None,
     created_before: datetime | None,
+    needs_apply_confirmation: bool | None,
+    in_applied_activity: bool | None,
     sort_by: str,
     sort_order: str,
 ) -> Select:
-    query = query.where(Application.user_id == user_id)
+    q = stmt.where(Application.user_id == user_id)
 
     if app_status:
-        query = query.where(Application.status == app_status)
+        q = q.where(Application.status == app_status)
     if min_match_score is not None:
-        query = query.where(Application.match_score >= min_match_score)
+        q = q.where(Application.match_score >= min_match_score)
     if max_match_score is not None:
-        query = query.where(Application.match_score <= max_match_score)
+        q = q.where(Application.match_score <= max_match_score)
     if created_after:
-        query = query.where(Application.created_at >= created_after)
+        q = q.where(Application.created_at >= created_after)
     if created_before:
-        query = query.where(Application.created_at <= created_before)
+        q = q.where(Application.created_at <= created_before)
+    if needs_apply_confirmation is True:
+        q = q.where(Application.status == "cv_emailed")
+    if in_applied_activity is True:
+        q = q.where(
+            or_(
+                Application.status == "applied_confirmed",
+                Application.status == "submitted",
+            )
+        )
 
     sort_column_map = {
         "created_at": Application.created_at,
         "match_score": Application.match_score,
         "status": Application.status,
         "updated_at": Application.updated_at,
+        "user_applied_confirmed_at": Application.user_applied_confirmed_at,
     }
     sort_col = sort_column_map.get(sort_by, Application.created_at)
     if sort_order == "asc":
-        query = query.order_by(sort_col.asc())
+        q = q.order_by(sort_col.asc())
     else:
-        query = query.order_by(sort_col.desc())
+        q = q.order_by(sort_col.desc())
 
-    return query
+    return q
+
+
+def _filtered_ids_subquery(
+    user_id: uuid.UUID,
+    app_status: str | None,
+    min_match_score: int | None,
+    max_match_score: int | None,
+    created_after: datetime | None,
+    created_before: datetime | None,
+    needs_apply_confirmation: bool | None,
+    in_applied_activity: bool | None,
+):
+    base = select(Application.id).where(Application.user_id == user_id)
+    if app_status:
+        base = base.where(Application.status == app_status)
+    if min_match_score is not None:
+        base = base.where(Application.match_score >= min_match_score)
+    if max_match_score is not None:
+        base = base.where(Application.match_score <= max_match_score)
+    if created_after:
+        base = base.where(Application.created_at >= created_after)
+    if created_before:
+        base = base.where(Application.created_at <= created_before)
+    if needs_apply_confirmation is True:
+        base = base.where(Application.status == "cv_emailed")
+    if in_applied_activity is True:
+        base = base.where(
+            or_(
+                Application.status == "applied_confirmed",
+                Application.status == "submitted",
+            )
+        )
+    return base.subquery()
 
 
 @router.get("", response_model=ApplicationListResponse)
@@ -74,7 +121,12 @@ async def list_applications(
     max_match_score: Optional[int] = Query(None),
     created_after: Optional[datetime] = Query(None),
     created_before: Optional[datetime] = Query(None),
-    sort_by: str = Query("created_at", pattern="^(created_at|match_score|status|updated_at)$"),
+    needs_apply_confirmation: Optional[bool] = Query(None),
+    in_applied_activity: Optional[bool] = Query(None),
+    sort_by: str = Query(
+        "created_at",
+        pattern="^(created_at|match_score|status|updated_at|user_applied_confirmed_at)$",
+    ),
     sort_order: str = Query("desc", pattern="^(asc|desc)$"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -83,22 +135,30 @@ async def list_applications(
 ):
     base_query = select(Application).options(joinedload(Application.job))
     base_query = _apply_application_filters(
-        base_query, current_user.id, status_filter,
-        min_match_score, max_match_score,
-        created_after, created_before, sort_by, sort_order,
+        base_query,
+        current_user.id,
+        status_filter,
+        min_match_score,
+        max_match_score,
+        created_after,
+        created_before,
+        needs_apply_confirmation,
+        in_applied_activity,
+        sort_by,
+        sort_order,
     )
 
-    count_query = select(func.count()).select_from(
-        select(Application.id)
-        .where(Application.user_id == current_user.id)
-        .subquery()
+    subq = _filtered_ids_subquery(
+        current_user.id,
+        status_filter,
+        min_match_score,
+        max_match_score,
+        created_after,
+        created_before,
+        needs_apply_confirmation,
+        in_applied_activity,
     )
-    if status_filter:
-        count_query = select(func.count()).select_from(
-            select(Application.id)
-            .where(Application.user_id == current_user.id, Application.status == status_filter)
-            .subquery()
-        )
+    count_query = select(func.count()).select_from(subq)
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0
 
@@ -113,6 +173,98 @@ async def list_applications(
         page=page,
         page_size=page_size,
         total_pages=math.ceil(total / page_size) if total > 0 else 0,
+    )
+
+
+@router.post(
+    "/{application_id}/confirm-applied",
+    response_model=ApplicationResponse,
+)
+async def confirm_applied_authenticated(
+    application_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Mark that you applied externally (same action as the link in the tailored CV email)."""
+    result = await db.execute(
+        select(Application)
+        .options(joinedload(Application.job))
+        .where(
+            Application.id == application_id,
+            Application.user_id == current_user.id,
+        )
+    )
+    application = result.unique().scalar_one_or_none()
+    if not application:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Application not found",
+        )
+    if application.status == "applied_confirmed":
+        return ApplicationResponse.model_validate(application)
+    if application.status != "cv_emailed":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This role is not waiting for an applied confirmation.",
+        )
+    now = datetime.now(timezone.utc)
+    application.user_applied_confirmed_at = now
+    application.status = "applied_confirmed"
+    await db.flush()
+    await db.refresh(application)
+    return ApplicationResponse.model_validate(application)
+
+
+@router.get("/{application_id}/confirm-applied")
+async def confirm_applied_via_email_link(
+    application_id: uuid.UUID,
+    token: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """One-click from email: log that you applied so it appears in Recent applications."""
+    payload = verify_applied_confirm_token(token)
+    if str(application_id) != payload.get("application_id"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Token does not match application",
+        )
+    uid = payload.get("sub")
+    if not uid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid token payload",
+        )
+
+    result = await db.execute(select(Application).where(Application.id == application_id))
+    application = result.scalar_one_or_none()
+    if not application:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Application not found",
+        )
+    if str(application.user_id) != str(uid):
+        raise HTTPException(
+            status_code=403,
+            detail="Token does not match this application",
+        )
+
+    if application.status == "applied_confirmed":
+        return RedirectResponse(
+            url=f"{settings.APP_URL}/applications/{application_id}?already_confirmed=1",
+            status_code=status.HTTP_302_FOUND,
+        )
+    if application.status != "cv_emailed":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This link is only for roles where we emailed a tailored CV.",
+        )
+    now = datetime.now(timezone.utc)
+    application.user_applied_confirmed_at = now
+    application.status = "applied_confirmed"
+    await db.flush()
+    return RedirectResponse(
+        url=f"{settings.APP_URL}/applications/{application_id}?applied=1",
+        status_code=status.HTTP_302_FOUND,
     )
 
 
@@ -431,10 +583,17 @@ async def reactivate_application(
     await db.refresh(application)
 
     if application.job:
-        email_service = EmailService(db)
-        await email_service.send_approval_email(
-            current_user, application, application.job,
-            match_analysis=application.match_analysis,
-        )
+        if application.tailored_resume_id:
+            from workers.notifications import send_tailored_cv_email
+
+            send_tailored_cv_email.delay(str(application.id))
+        else:
+            email_service = EmailService(db)
+            await email_service.send_approval_email(
+                current_user,
+                application,
+                application.job,
+                match_analysis=application.match_analysis,
+            )
 
     return ApplicationResponse.model_validate(application)

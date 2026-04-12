@@ -60,7 +60,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="JobCatcher API",
-    description="AI-powered autonomous job application platform",
+    description="AI-powered job matching and tailored CV delivery by email",
     version="1.0.0",
     lifespan=lifespan,
 )

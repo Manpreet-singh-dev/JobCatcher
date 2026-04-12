@@ -61,6 +61,7 @@ async def get_analytics_summary(
     return AnalyticsSummary(
         total_applications=total,
         pending_approval=status_map.get("pending_approval", 0),
+        cv_emailed=status_map.get("cv_emailed", 0),
         approved=status_map.get("approved", 0),
         submitted=submitted,
         rejected=status_map.get("rejected", 0),

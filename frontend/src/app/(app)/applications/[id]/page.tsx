@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
@@ -19,24 +19,14 @@ import {
   Send,
   ExternalLink,
   Loader2,
-  CheckCircle2,
-  XCircle,
   Globe,
   Users,
   CalendarDays,
 } from "lucide-react";
-import MatchScoreRing from "@/components/match-score-ring";
 import StatusBadge from "@/components/status-badge";
 import { cn, formatSalary } from "@/lib/utils";
 import { applications as appApi, ApiError } from "@/lib/api";
 import type { Application } from "@/types";
-
-function getScoreColor(score: number): string {
-  if (score >= 85) return "#00D4AA";
-  if (score >= 70) return "#6C63FF";
-  if (score >= 55) return "#FFD93D";
-  return "#FF6B6B";
-}
 
 interface AppDetailData {
   id: string;
@@ -47,7 +37,6 @@ interface AppDetailData {
   workMode: string;
   source: string;
   postedDate: string;
-  matchScore: number;
   status: string;
   description: string;
   requirements: string[];
@@ -71,13 +60,14 @@ const TIMELINE_ICONS: Record<string, React.ElementType> = {
 
 export default function ApplicationDetailPage() {
   const params = useParams();
+  const confirmBannerShown = useRef(false);
   const [loading, setLoading] = useState(true);
   const [activeResumeTab, setActiveResumeTab] = useState<"original" | "tailored" | "diff">("tailored");
   const [notes, setNotes] = useState("");
   const [appData, setAppData] = useState<AppDetailData | null>(null);
-  const [statusOverride, setStatusOverride] = useState("pending_approval");
+  const [statusOverride, setStatusOverride] = useState("cv_emailed");
   const [error, setError] = useState<string | null>(null);
-  const [decisionLoading, setDecisionLoading] = useState<"approve" | "reject" | null>(null);
+  const [confirmAppliedLoading, setConfirmAppliedLoading] = useState(false);
 
   const reloadApplication = useCallback(async () => {
     const id = params.id as string;
@@ -98,7 +88,6 @@ export default function ApplicationDetailPage() {
       workMode: job?.work_mode || "Not specified",
       source: job?.source || "Unknown",
       postedDate: job?.posted_at ? new Date(job.posted_at).toLocaleDateString() : "",
-      matchScore: data.match_score || 0,
       status: data.status,
       description: job?.description || "No description available.",
       requirements: job?.requirements || [],
@@ -109,9 +98,55 @@ export default function ApplicationDetailPage() {
         skillsRequired: analysis?.missing_skills || [],
       },
       timeline: [
-        { time: new Date(data.created_at).toLocaleString(), event: "Application created by agent", icon: "bot", color: "#6C63FF" },
-        ...(data.approval_action_at ? [{ time: new Date(data.approval_action_at).toLocaleString(), event: `You ${data.status === "rejected" ? "rejected" : "approved"} the application`, icon: "user", color: data.status === "rejected" ? "#FF6B6B" : "#00D4AA" }] : []),
-        ...(data.submitted_at ? [{ time: new Date(data.submitted_at).toLocaleString(), event: "Application submitted", icon: "send", color: "#00D4AA" }] : []),
+        {
+          time: new Date(data.created_at).toLocaleString(),
+          event:
+            data.status === "cv_emailed" || data.status === "applied_confirmed"
+              ? "Tailored CV generated for this role"
+              : "Application created by agent",
+          icon: "bot",
+          color: "#6C63FF",
+        },
+        ...(data.status === "cv_emailed" || data.status === "applied_confirmed"
+          ? [
+              {
+                time: new Date(data.updated_at).toLocaleString(),
+                event: "PDF emailed to your inbox",
+                icon: "mail",
+                color: "#00D4AA",
+              },
+            ]
+          : []),
+        ...(data.status === "applied_confirmed" && data.user_applied_confirmed_at
+          ? [
+              {
+                time: new Date(data.user_applied_confirmed_at).toLocaleString(),
+                event: "You confirmed you applied — shown under Recent applications",
+                icon: "check",
+                color: "#00D4AA",
+              },
+            ]
+          : []),
+        ...(data.approval_action_at
+          ? [
+              {
+                time: new Date(data.approval_action_at).toLocaleString(),
+                event: `You ${data.status === "rejected" ? "rejected" : "approved"} the application`,
+                icon: "user",
+                color: data.status === "rejected" ? "#FF6B6B" : "#00D4AA",
+              },
+            ]
+          : []),
+        ...(data.submitted_at
+          ? [
+              {
+                time: new Date(data.submitted_at).toLocaleString(),
+                event: "Application submitted",
+                icon: "send",
+                color: "#00D4AA",
+              },
+            ]
+          : []),
       ],
     });
     setStatusOverride(data.status);
@@ -131,31 +166,34 @@ export default function ApplicationDetailPage() {
     void fetchApplication();
   }, [params.id, reloadApplication]);
 
-  async function handleApproveFromDetail() {
-    if (!appData) return;
-    setDecisionLoading("approve");
-    try {
-      await appApi.approve(appData.id);
-      await reloadApplication();
-    } catch (err) {
-      const msg = err instanceof ApiError ? err.message : "Could not approve application.";
-      alert(msg);
-    } finally {
-      setDecisionLoading(null);
+  useEffect(() => {
+    if (loading || !appData || confirmBannerShown.current) return;
+    if (typeof window === "undefined") return;
+    const q = new URLSearchParams(window.location.search);
+    const applied = q.get("applied");
+    const already = q.get("already_confirmed");
+    if (applied === "1" || already === "1") {
+      confirmBannerShown.current = true;
+      if (already === "1") {
+        alert("You already confirmed this application earlier.");
+      } else {
+        alert("Thanks — this role is now listed under Recent applications on your dashboard.");
+      }
+      window.history.replaceState({}, "", window.location.pathname);
     }
-  }
+  }, [loading, appData]);
 
-  async function handleRejectFromDetail() {
+  async function handleConfirmAppliedFromDetail() {
     if (!appData) return;
-    setDecisionLoading("reject");
+    setConfirmAppliedLoading(true);
     try {
-      await appApi.reject(appData.id);
+      await appApi.confirmApplied(appData.id);
       await reloadApplication();
     } catch (err) {
-      const msg = err instanceof ApiError ? err.message : "Could not reject application.";
+      const msg = err instanceof ApiError ? err.message : "Could not confirm.";
       alert(msg);
     } finally {
-      setDecisionLoading(null);
+      setConfirmAppliedLoading(false);
     }
   }
 
@@ -284,7 +322,7 @@ export default function ApplicationDetailPage() {
             <h2 className="mb-4 text-lg font-semibold text-[#F0F0FF]">
               About {appData.company}
             </h2>
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
               <div>
                 <p className="text-xs text-[#55557A]">Source</p>
                 <p className="mt-0.5 text-sm text-[#F0F0FF]">{appData.source}</p>
@@ -292,12 +330,6 @@ export default function ApplicationDetailPage() {
               <div>
                 <p className="text-xs text-[#55557A]">Work Mode</p>
                 <p className="mt-0.5 text-sm text-[#F0F0FF]">{appData.workMode}</p>
-              </div>
-              <div>
-                <p className="text-xs text-[#55557A]">Match Score</p>
-                <p className="mt-0.5 text-sm font-semibold" style={{ color: getScoreColor(appData.matchScore) }}>
-                  {appData.matchScore}%
-                </p>
               </div>
               <div>
                 <p className="text-xs text-[#55557A]">Status</p>
@@ -445,59 +477,44 @@ export default function ApplicationDetailPage() {
 
         {/* Right Column */}
         <div className="space-y-6">
-          {(appData.status === "pending_approval" || appData.status === "expired") && (
+          {appData.status === "cv_emailed" && (
             <div className="rounded-xl border border-[#2E2E4A] bg-[#1A1A2E] p-6">
-              <h2 className="mb-3 text-sm font-semibold text-[#F0F0FF]">
-                Your decision
-              </h2>
-              <p className="mb-4 text-xs text-[#8888AA]">
-                {appData.status === "expired"
-                  ? "This request expired, but you can still approve from your dashboard."
-                  : "Approve to confirm this application, or reject to skip this role."}
+              <h2 className="mb-2 text-sm font-semibold text-[#F0F0FF]">Tailored CV emailed</h2>
+              <p className="text-xs text-[#8888AA]">
+                We sent a PDF to your account email. Use the employer link to apply, then click{" "}
+                <strong className="text-[#F0F0FF]">I applied</strong> in that email (or the button below) so this role appears under{" "}
+                <strong className="text-[#F0F0FF]">Recent applications</strong> on your dashboard.
               </p>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <button
-                  type="button"
-                  disabled={decisionLoading !== null}
-                  onClick={() => void handleApproveFromDetail()}
-                  className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-[#00D4AA] px-4 py-2.5 text-sm font-semibold text-[#0F0F1A] transition-colors hover:bg-[#00D4AA]/90 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {decisionLoading === "approve" ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <CheckCircle2 className="h-4 w-4" />
-                  )}
-                  Approve
-                </button>
-                {appData.status === "pending_approval" && (
-                  <button
-                    type="button"
-                    disabled={decisionLoading !== null}
-                    onClick={() => void handleRejectFromDetail()}
-                    className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-[#FF6B6B]/40 px-4 py-2.5 text-sm font-semibold text-[#FF6B6B] transition-colors hover:bg-[#FF6B6B]/10 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {decisionLoading === "reject" ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <XCircle className="h-4 w-4" />
-                    )}
-                    Reject
-                  </button>
+              <p className="mt-2 text-xs text-[#8888AA]">
+                Tailored JSON:{" "}
+                <Link href="/resumes" className="text-[#6C63FF] hover:underline">
+                  Resume Manager
+                </Link>
+              </p>
+              <button
+                type="button"
+                disabled={confirmAppliedLoading}
+                onClick={() => void handleConfirmAppliedFromDetail()}
+                className="mt-4 w-full rounded-xl bg-[#059669] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#047857] disabled:opacity-50"
+              >
+                {confirmAppliedLoading ? (
+                  <span className="inline-flex items-center justify-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Saving…
+                  </span>
+                ) : (
+                  "I applied to this job"
                 )}
-              </div>
+              </button>
             </div>
           )}
-
-          {/* Match Score */}
-          <div className="rounded-xl border border-[#2E2E4A] bg-[#1A1A2E] p-6 text-center">
-            <h2 className="mb-4 text-lg font-semibold text-[#F0F0FF]">
-              Match Score
-            </h2>
-            <div className="flex justify-center">
-              <MatchScoreRing score={appData.matchScore} size={120} />
+          {appData.status === "applied_confirmed" && (
+            <div className="rounded-xl border border-[#059669]/30 bg-[#059669]/10 p-6">
+              <h2 className="mb-1 text-sm font-semibold text-[#F0F0FF]">Application logged</h2>
+              <p className="text-xs text-[#8888AA]">
+                This role appears in your Recent applications list. You can still open the job from your email if you need the apply link again.
+              </p>
             </div>
-          </div>
-
+          )}
           {/* Why This Matches */}
           <div className="rounded-xl border border-[#2E2E4A] bg-[#1A1A2E] p-6">
             <h2 className="mb-3 text-sm font-semibold text-[#F0F0FF]">
@@ -565,7 +582,8 @@ export default function ApplicationDetailPage() {
               onChange={(e) => setStatusOverride(e.target.value)}
               className="w-full rounded-xl border border-[#2E2E4A] bg-[#0F0F1A] px-4 py-3 text-sm text-[#F0F0FF] outline-none focus:border-[#6C63FF]"
             >
-              <option value="pending_approval">Pending Approval</option>
+              <option value="cv_emailed">CV emailed</option>
+              <option value="applied_confirmed">Applied (logged)</option>
               <option value="applied">Applied</option>
               <option value="in_review">In Review</option>
               <option value="interview">Interview</option>

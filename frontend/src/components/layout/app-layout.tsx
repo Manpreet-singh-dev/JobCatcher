@@ -20,9 +20,8 @@ const pageTitles: Record<string, string> = {
   "/jobs": "Jobs Feed",
   "/applications": "My Applications",
   "/resumes": "Resume Manager",
-  "/agent": "Agent Settings",
   "/preferences": "Preferences",
-  "/analytics": "Analytics",
+  "/tailor-cv": "CV from posting",
 };
 
 function AppLayout({ title, children, className }: AppLayoutProps) {

@@ -209,14 +209,18 @@ async def get_today_summary(
     for row in app_counts:
         status_map[row[0]] = row[1]
 
-    approvals_sent = status_map.get("pending_approval", 0)
-    applications_submitted = status_map.get("submitted", 0) + status_map.get("approved", 0)
+    cvs_emailed = status_map.get("cv_emailed", 0) + status_map.get(
+        "applied_confirmed", 0
+    )
+    applications_submitted = status_map.get("submitted", 0) + status_map.get(
+        "approved", 0
+    )
 
     return {
         "jobs_scanned": jobs_scanned,
         "jobs_matched": jobs_matched,
         "resumes_tailored": resumes_tailored,
-        "approvals_sent": approvals_sent,
+        "cvs_emailed": cvs_emailed,
         "applications_submitted": applications_submitted,
     }
 

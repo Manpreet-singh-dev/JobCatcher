@@ -136,6 +136,96 @@ def send_status_email(self, application_id: str, email_type: str):
 
 
 @celery_app.task(
+    bind=True,
+    name="workers.notifications.send_tailored_cv_email",
+    max_retries=3,
+    default_retry_delay=60,
+    acks_late=True,
+)
+def send_tailored_cv_email(self, application_id: str):
+    """Email the user a PDF of the tailored resume for a job (no external application submission)."""
+
+    async def _run():
+        from sqlalchemy import select
+        from sqlalchemy.orm import selectinload
+
+        from app.models.application import Application
+        from app.models.job import Job
+        from app.models.user import User
+        from app.services.email.service import EmailService
+        from app.services.resume_pdf import generate_resume_pdf
+
+        async with get_db() as db:
+            app_result = await db.execute(
+                select(Application)
+                .options(selectinload(Application.tailored_resume))
+                .where(Application.id == application_id)
+            )
+            application = app_result.scalar_one_or_none()
+            if not application:
+                logger.error("Application %s not found for tailored CV email", application_id)
+                return {"status": "error", "reason": "not_found"}
+
+            user_result = await db.execute(select(User).where(User.id == application.user_id))
+            user = user_result.scalar_one_or_none()
+
+            job_result = await db.execute(select(Job).where(Job.id == application.job_id))
+            job = job_result.scalar_one_or_none()
+
+            tailored = application.tailored_resume
+            if not user or not job or not tailored or not tailored.parsed_json:
+                logger.error("Missing data for tailored CV email %s", application_id)
+                return {"status": "error", "reason": "missing_data"}
+
+            pdf_path = generate_resume_pdf(tailored.parsed_json)
+            if not pdf_path or not pdf_path.exists():
+                logger.error("Could not build PDF for application %s", application_id)
+                return {"status": "error", "reason": "pdf_failed"}
+
+            try:
+                pdf_bytes = pdf_path.read_bytes()
+            finally:
+                try:
+                    pdf_path.unlink()
+                except OSError:
+                    pass
+
+            def _safe_part(text: str, max_len: int = 36) -> str:
+                out = "".join(c for c in (text or "") if c.isalnum() or c in (" ", "-", "_")).strip()
+                return (out[:max_len] or "role").replace(" ", "_")
+
+            pdf_name = f"CV_{_safe_part(job.company)}_{_safe_part(job.title)}.pdf"
+
+            from app.core.security import create_applied_confirm_token
+
+            applied_token = create_applied_confirm_token(
+                str(user.id), str(application.id)
+            )
+
+            email_svc = EmailService(db)
+            sent = await email_svc.send_tailored_cv_email(
+                user=user,
+                application=application,
+                job=job,
+                pdf_bytes=pdf_bytes,
+                pdf_filename=pdf_name,
+                applied_confirm_token=applied_token,
+            )
+
+            if sent:
+                logger.info("Tailored CV email sent for application %s", application_id)
+                return {"status": "sent"}
+            logger.warning("Tailored CV email not sent for application %s", application_id)
+            return {"status": "not_sent"}
+
+    try:
+        return run_async(_run())
+    except Exception as exc:
+        logger.error("send_tailored_cv_email failed for %s", application_id, exc_info=True)
+        raise self.retry(exc=exc)
+
+
+@celery_app.task(
     name="workers.notifications.check_expired_applications",
     acks_late=True,
 )

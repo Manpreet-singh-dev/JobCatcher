@@ -5,14 +5,12 @@ import { MapPin, Building2, Clock, Briefcase, DollarSign, ExternalLink, Check, X
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { MatchScoreRing } from "@/components/match-score-ring";
 import { StatusBadge } from "@/components/status-badge";
 import { cn, formatRelativeTime, formatSalary, getInitials, generateGradient, truncateText } from "@/lib/utils";
 import type { Job, ApplicationStatus } from "@/types";
 
 interface JobCardProps {
   job: Job;
-  matchScore?: number;
   status?: ApplicationStatus;
   onViewDetails?: () => void;
   onApprove?: () => void;
@@ -35,7 +33,6 @@ const employmentTypeLabels: Record<string, string> = {
 
 function JobCard({
   job,
-  matchScore,
   status,
   onViewDetails,
   onApprove,
@@ -68,25 +65,17 @@ function JobCard({
 
         {/* Job Info */}
         <div className="flex-1 min-w-0">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h3 className="font-semibold text-text-primary truncate">
-                {job.title}
-              </h3>
-              <div className="mt-0.5 flex items-center gap-2 text-sm text-text-secondary">
-                <Building2 className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">{job.company}</span>
-                <span className="text-text-muted">·</span>
-                <MapPin className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">{job.location}</span>
-              </div>
+          <div className="min-w-0">
+            <h3 className="font-semibold text-text-primary truncate">
+              {job.title}
+            </h3>
+            <div className="mt-0.5 flex items-center gap-2 text-sm text-text-secondary">
+              <Building2 className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">{job.company}</span>
+              <span className="text-text-muted">·</span>
+              <MapPin className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">{job.location}</span>
             </div>
-
-            {matchScore !== undefined && (
-              <div className="shrink-0">
-                <MatchScoreRing score={matchScore} size="sm" showLabel={false} />
-              </div>
-            )}
           </div>
 
           {/* Badges */}

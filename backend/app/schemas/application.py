@@ -24,6 +24,7 @@ class ApplicationResponse(BaseModel):
     submission_screenshot_path: Optional[str] = None
     submission_error: Optional[str] = None
     user_notes: Optional[str] = None
+    user_applied_confirmed_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
     job: Optional[JobResponse] = None
@@ -48,7 +49,10 @@ class ApplicationFilters(BaseModel):
     max_match_score: Optional[int] = None
     created_after: Optional[datetime] = None
     created_before: Optional[datetime] = None
-    sort_by: str = Field(default="created_at", pattern="^(created_at|match_score|status|updated_at)$")
+    sort_by: str = Field(
+        default="created_at",
+        pattern="^(created_at|match_score|status|updated_at|user_applied_confirmed_at)$",
+    )
     sort_order: str = Field(default="desc", pattern="^(asc|desc)$")
     page: int = Field(default=1, ge=1)
     page_size: int = Field(default=20, ge=1, le=100)

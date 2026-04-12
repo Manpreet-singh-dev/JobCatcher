@@ -1,16 +1,14 @@
 "use client";
 
 import { create } from "zustand";
-import type { User, AgentStatus, Notification } from "@/types";
+import type { User, Notification } from "@/types";
 
 interface AppState {
   user: User | null;
-  agentStatus: AgentStatus;
   notifications: Notification[];
   sidebarCollapsed: boolean;
 
   setUser: (user: User | null) => void;
-  setAgentStatus: (status: AgentStatus) => void;
   addNotification: (notification: Omit<Notification, "id" | "timestamp">) => void;
   removeNotification: (id: string) => void;
   clearNotifications: () => void;
@@ -20,18 +18,10 @@ interface AppState {
 
 export const useAppStore = create<AppState>((set) => ({
   user: null,
-  agentStatus: {
-    is_active: true,
-    is_running: false,
-    applications_today: 0,
-    max_applications_per_day: 5,
-  },
   notifications: [],
   sidebarCollapsed: false,
 
   setUser: (user) => set({ user }),
-
-  setAgentStatus: (agentStatus) => set({ agentStatus }),
 
   addNotification: (notification) =>
     set((state) => ({

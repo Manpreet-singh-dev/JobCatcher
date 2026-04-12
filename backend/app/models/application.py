@@ -46,6 +46,9 @@ class Application(Base):
     )
     submission_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     user_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    user_applied_confirmed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

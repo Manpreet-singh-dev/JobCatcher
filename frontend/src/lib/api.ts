@@ -7,19 +7,33 @@ import type {
   JobFilters,
   Application,
   ApplicationStatus,
-  AgentStatus,
-  AgentLog,
-  AnalyticsSummary,
-  ApplicationsOverTime,
-  StatusDistribution,
-  TopSkill,
-  MatchScoreHistogramBucket,
   PaginatedResponse,
 } from "@/types";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
 const TOKEN_KEY = "jobcatcher_token";
 const REFRESH_KEY = "jobcatcher_refresh";
+
+function messageFromApiErrorBody(raw: {
+  message?: string;
+  detail?: string | { msg?: string }[];
+  code?: string;
+  details?: Record<string, string[]>;
+}): string {
+  let msg = "Request failed";
+  if (typeof raw.message === "string" && raw.message) msg = raw.message;
+  else if (typeof raw.detail === "string") msg = raw.detail;
+  else if (Array.isArray(raw.detail)) {
+    msg = raw.detail
+      .map((d) =>
+        typeof d === "object" && d && "msg" in d && typeof d.msg === "string"
+          ? d.msg
+          : JSON.stringify(d)
+      )
+      .join(", ");
+  }
+  return msg;
+}
 
 class ApiClient {
   private baseUrl: string;
@@ -147,8 +161,15 @@ class ApiClient {
               : undefined,
         });
         if (!retryResponse.ok) {
-          const error = await retryResponse.json().catch(() => ({ message: "Request failed" }));
-          throw new ApiError(retryResponse.status, error.message, error.code, error.details);
+          const raw = (await retryResponse.json().catch(() => ({}))) as Parameters<
+            typeof messageFromApiErrorBody
+          >[0];
+          throw new ApiError(
+            retryResponse.status,
+            messageFromApiErrorBody(raw),
+            raw.code,
+            raw.details
+          );
         }
         return retryResponse.json();
       }
@@ -160,8 +181,15 @@ class ApiClient {
     }
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ message: "Request failed" }));
-      throw new ApiError(response.status, error.message, error.code, error.details);
+      const raw = (await response.json().catch(() => ({}))) as Parameters<
+        typeof messageFromApiErrorBody
+      >[0];
+      throw new ApiError(
+        response.status,
+        messageFromApiErrorBody(raw),
+        raw.code,
+        raw.details
+      );
     }
 
     if (response.status === 204) return undefined as T;
@@ -310,12 +338,22 @@ export const resumes = {
   delete: (id: string) => client.del<void>(`/resumes/${id}`),
   setBase: (id: string) =>
     client.post<Resume>(`/resumes/${id}/set-base`, {}),
+  tailorFromPosting: (body: {
+    description: string;
+    job_title?: string;
+    company?: string;
+    location?: string;
+    required_skills?: string[];
+    email_pdf?: boolean;
+  }) => client.post<Resume>("/resumes/tailor-from-posting", body),
 };
 
 export const jobs = {
   list: (filters?: JobFilters) =>
     client.get<PaginatedResponse<Job>>("/jobs", filters as Record<string, string | number | boolean | undefined>),
   getById: (id: string) => client.get<Job>(`/jobs/${id}`),
+  requestTailoredCv: (id: string) =>
+    client.post<{ message: string; job_id: string }>(`/jobs/${id}/tailor-and-email`),
 };
 
 export const applications = {
@@ -326,6 +364,8 @@ export const applications = {
     page?: number;
     per_page?: number;
     page_size?: number;
+    needs_apply_confirmation?: boolean;
+    in_applied_activity?: boolean;
   }) => {
     const params = { ...filters } as Record<string, string | number | boolean | undefined>;
     if (params.per_page && !params.page_size) {
@@ -345,36 +385,7 @@ export const applications = {
     client.post<Application>(`/applications/${id}/reject`),
   reactivate: (id: string) =>
     client.post<Application>(`/applications/${id}/reactivate`),
+  confirmApplied: (id: string) =>
+    client.post<Application>(`/applications/${id}/confirm-applied`),
 };
 
-export const agent = {
-  getStatus: () => client.get<AgentStatus>("/agent/status"),
-  pause: () => client.post<AgentStatus>("/agent/pause"),
-  resume: () => client.post<AgentStatus>("/agent/resume"),
-  runNow: () => client.post<AgentStatus>("/agent/run-now"),
-  getLogs: (params?: { page?: number; per_page?: number }) =>
-    client.get<PaginatedResponse<AgentLog>>("/agent/logs", params as Record<string, string | number | boolean | undefined>),
-  getTodaySummary: () =>
-    client.get<{
-      jobs_scanned: number;
-      jobs_matched: number;
-      resumes_tailored: number;
-      approvals_sent: number;
-      applications_submitted: number;
-    }>("/agent/today-summary"),
-  resetDailyLimit: () => client.post<{ message: string }>("/agent/reset-daily-limit"),
-  clearQueue: () => client.post<{ message: string }>("/agent/clear-queue"),
-};
-
-export const analytics = {
-  getSummary: () =>
-    client.get<AnalyticsSummary>("/analytics/summary"),
-  getApplicationsOverTime: (params?: { days?: number }) =>
-    client.get<ApplicationsOverTime[]>("/analytics/applications-over-time", params as Record<string, string | number | boolean | undefined>),
-  getStatusDistribution: () =>
-    client.get<StatusDistribution[]>("/analytics/status-distribution"),
-  getTopSkills: () =>
-    client.get<TopSkill[]>("/analytics/top-skills"),
-  getMatchScoreHistogram: () =>
-    client.get<MatchScoreHistogramBucket[]>("/analytics/match-score-histogram"),
-};

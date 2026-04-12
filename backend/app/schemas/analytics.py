@@ -4,6 +4,7 @@ from pydantic import BaseModel
 class AnalyticsSummary(BaseModel):
     total_applications: int = 0
     pending_approval: int = 0
+    cv_emailed: int = 0
     approved: int = 0
     submitted: int = 0
     rejected: int = 0

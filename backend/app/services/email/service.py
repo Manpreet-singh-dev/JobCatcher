@@ -1,10 +1,22 @@
+import base64
 import logging
+from urllib.parse import quote
 from datetime import datetime, timezone
 from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from sendgrid import SendGridAPIClient
-from sendgrid.helpers.mail import Content, Email, Mail, To
+from sendgrid.helpers.mail import (
+    Attachment,
+    Content,
+    Disposition,
+    Email,
+    FileContent,
+    FileName,
+    FileType,
+    Mail,
+    To,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -34,6 +46,7 @@ class EmailService:
         user: User,
         application: Application | None = None,
         email_type: str = "general",
+        attachments: list[tuple[str, bytes, str]] | None = None,
     ) -> bool:
         if not self.sg_client:
             logger.warning("SendGrid API key not configured, skipping email send")
@@ -46,6 +59,16 @@ class EmailService:
                 subject=subject,
                 html_content=Content("text/html", html_content),
             )
+            if attachments:
+                for filename, file_bytes, mime in attachments:
+                    b64 = base64.b64encode(file_bytes).decode()
+                    att = Attachment(
+                        FileContent(b64),
+                        FileName(filename),
+                        FileType(mime),
+                        Disposition("attachment"),
+                    )
+                    message.add_attachment(att)
 
             response = self.sg_client.send(message)
             email_status = "sent" if response.status_code in (200, 201, 202) else "failed"
@@ -167,6 +190,35 @@ class EmailService:
             <p>Good luck! 🎉</p>
             </div>"""
 
+        if "tailored_cv" in template_name:
+            apply_html = ""
+            if context.get("apply_url"):
+                apply_html = (
+                    f'<p><a href="{context.get("apply_url")}" style="color:#2563eb;">Open application page</a></p>'
+                )
+            confirm_html = ""
+            if context.get("confirm_applied_url"):
+                confirm_html = (
+                    f'<div style="margin:20px 0;text-align:center;">'
+                    f'<a href="{context.get("confirm_applied_url")}" '
+                    'style="display:inline-block;padding:12px 28px;background:#059669;color:white;'
+                    'text-decoration:none;border-radius:8px;font-weight:600;">I applied to this job</a></div>'
+                    "<p style=\"color:#64748b;font-size:12px;\">Click after you submit your application so it appears "
+                    "in your Recent applications list.</p>"
+                )
+            return f"""{base_style}
+            <h2 style="color: #2563eb;">Your tailored CV is ready</h2>
+            <p>Hi {context.get('user_name', 'there')},</p>
+            <p>Your tailored CV is attached (PDF).</p>
+            <div style="background: #f8fafc; padding: 16px; border-radius: 8px; margin: 16px 0;">
+                <h3 style="margin: 0 0 8px 0;">{context.get('job_title', 'N/A')}</h3>
+                <p style="margin: 0; color: #64748b;">{context.get('company', 'N/A')} · {context.get('location', '')}</p>
+            </div>
+            {confirm_html}
+            {apply_html}
+            <p style="color:#64748b;font-size:12px;">You can also open Resume Manager in JobCatcher to view or download.</p>
+            </div>"""
+
         return f"{base_style}<p>{context}</p></div>"
 
     def _build_context(
@@ -234,6 +286,84 @@ class EmailService:
             user=user,
             application=application,
             email_type="approval_request",
+        )
+
+    async def send_tailored_cv_email(
+        self,
+        user: User,
+        application: Application,
+        job: Job,
+        pdf_bytes: bytes,
+        pdf_filename: str,
+        applied_confirm_token: str,
+    ) -> bool:
+        match_summary = ""
+        if application.match_analysis:
+            ma = application.match_analysis
+            strengths = ma.get("strengths", [])
+            concerns = ma.get("concerns", [])
+            if strengths or concerns:
+                match_summary = (
+                    f"Strengths: {', '.join(strengths)}. "
+                    f"Concerns: {', '.join(concerns) if concerns else 'None'}."
+                )
+
+        confirm_url = (
+            f"{settings.API_URL}/api/applications/{application.id}"
+            f"/confirm-applied?token={quote(applied_confirm_token, safe='')}"
+        )
+        context = self._build_context(user, application, job, {
+            "match_summary": match_summary,
+            "apply_url": job.apply_url or "",
+            "show_match_score": application.match_score is not None,
+            "confirm_applied_url": confirm_url,
+        })
+
+        html = self._render_template("tailored_cv.html", context)
+        subject = f"[JobCatcher] Your tailored CV — {job.title} at {job.company}"
+
+        return await self._send_email(
+            to_email=user.email,
+            subject=subject,
+            html_content=html,
+            user=user,
+            application=application,
+            email_type="tailored_cv",
+            attachments=[(pdf_filename, pdf_bytes, "application/pdf")],
+        )
+
+    async def send_tailored_cv_for_posting_email(
+        self,
+        user: User,
+        job_title: str,
+        company: str,
+        pdf_bytes: bytes,
+        pdf_filename: str,
+    ) -> bool:
+        ctx = {
+            "user_name": user.name or user.email.split("@")[0],
+            "user_email": user.email,
+            "job_title": job_title,
+            "company": company or "Posting you provided",
+            "location": "—",
+            "match_score": 0,
+            "show_match_score": False,
+            "match_summary": "",
+            "apply_url": "",
+            "app_url": settings.APP_URL,
+            "api_url": settings.API_URL,
+        }
+        html = self._render_template("tailored_cv.html", ctx)
+        subject = f"[JobCatcher] Tailored CV — {job_title}"
+
+        return await self._send_email(
+            to_email=user.email,
+            subject=subject,
+            html_content=html,
+            user=user,
+            application=None,
+            email_type="tailored_cv_posting",
+            attachments=[(pdf_filename, pdf_bytes, "application/pdf")],
         )
 
     async def send_approved_email(

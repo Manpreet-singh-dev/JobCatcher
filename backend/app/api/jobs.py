@@ -239,3 +239,27 @@ async def get_job(
             detail="Job not found",
         )
     return JobResponse.model_validate(job)
+
+
+@router.post("/{job_id}/tailor-and-email")
+async def queue_tailored_cv_email(
+    job_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Queue AI tailoring for this job and email a PDF tailored CV to the signed-in user."""
+    result = await db.execute(select(Job).where(Job.id == job_id))
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Job not found",
+        )
+
+    from workers.tailoring import tailor_resume_for_job
+
+    tailor_resume_for_job.delay(str(current_user.id), str(job_id))
+    return {
+        "message": "Tailoring started. You will receive an email with your tailored CV shortly.",
+        "job_id": str(job_id),
+    }

@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ParsedResumeData(BaseModel):
@@ -46,3 +46,14 @@ class ResumeUploadResponse(BaseModel):
 class ResumeUpdate(BaseModel):
     version_name: Optional[str] = None
     parsed_json: Optional[dict[str, Any]] = None
+
+
+class TailorFromPostingRequest(BaseModel):
+    """Paste a job description to generate a tailored CV from your base resume."""
+
+    description: str = Field(..., min_length=40)
+    job_title: Optional[str] = None
+    company: Optional[str] = None
+    location: Optional[str] = None
+    required_skills: Optional[list[str]] = None
+    email_pdf: bool = True

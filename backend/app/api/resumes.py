@@ -1,3 +1,4 @@
+import json
 import uuid
 from pathlib import Path
 
@@ -12,8 +13,13 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.resume import Resume
 from app.models.user import User
-from app.schemas.resume import ResumeResponse, ResumeUpdate, ResumeUploadResponse
-from app.services.ai.service import ai_service
+from app.schemas.resume import (
+    ResumeResponse,
+    ResumeUpdate,
+    ResumeUploadResponse,
+    TailorFromPostingRequest,
+)
+from app.services.ai.service import AIService, ai_service
 
 router = APIRouter(prefix="/api/resumes", tags=["resumes"])
 
@@ -37,6 +43,101 @@ async def list_resumes(
     )
     resumes = result.scalars().all()
     return [ResumeResponse.model_validate(r) for r in resumes]
+
+
+@router.post("/tailor-from-posting", response_model=ResumeResponse, status_code=status.HTTP_201_CREATED)
+async def tailor_from_posting(
+    body: TailorFromPostingRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate a tailored resume JSON from a pasted job description (optional PDF to email)."""
+    from workers.tailoring import TAILOR_PROMPT
+
+    resume_result = await db.execute(
+        select(Resume)
+        .where(Resume.user_id == current_user.id, Resume.is_base.is_(True))
+        .order_by(Resume.created_at.desc())
+        .limit(1)
+    )
+    base_resume = resume_result.scalar_one_or_none()
+    if not base_resume or not base_resume.parsed_json:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Upload a base resume first so we can tailor it.",
+        )
+
+    match_stub = {
+        "match_score": 0,
+        "recommended": True,
+        "strengths": [],
+        "concerns": [],
+        "matched_skills": [],
+        "missing_skills": [],
+        "match_reasons": [],
+    }
+    ai = AIService()
+    prompt = TAILOR_PROMPT.format(
+        resume_json=json.dumps(base_resume.parsed_json, indent=2),
+        job_title=body.job_title or "Role from your posting",
+        company=body.company or "Employer",
+        location=body.location or "Not specified",
+        job_description=body.description.strip(),
+        required_skills=", ".join(body.required_skills or []),
+        match_analysis=json.dumps(match_stub, indent=2),
+    )
+    try:
+        response_text = await ai._call_llm(prompt, max_tokens=8192)
+        tailored_json = ai._extract_json(response_text)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Could not generate a tailored resume. Try again in a moment.",
+        )
+
+    title_hint = body.job_title or "Custom posting"
+    company_hint = body.company or "Posted role"
+    tailored_resume = Resume(
+        user_id=current_user.id,
+        version_name=f"Tailored: {title_hint} ({company_hint})",
+        is_base=False,
+        parsed_json=tailored_json,
+        original_filename=base_resume.original_filename,
+    )
+    db.add(tailored_resume)
+    await db.flush()
+    await db.refresh(tailored_resume)
+
+    if body.email_pdf:
+        from app.services.email.service import EmailService
+        from app.services.resume_pdf import generate_resume_pdf
+
+        pdf_path = generate_resume_pdf(tailored_json)
+        if pdf_path and pdf_path.exists():
+            try:
+                pdf_bytes = pdf_path.read_bytes()
+            finally:
+                try:
+                    pdf_path.unlink()
+                except OSError:
+                    pass
+
+            def _safe_part(text: str, max_len: int = 32) -> str:
+                out = "".join(
+                    c for c in (text or "") if c.isalnum() or c in (" ", "-", "_")
+                ).strip()
+                return (out[:max_len] or "CV").replace(" ", "_")
+
+            email_svc = EmailService(db)
+            await email_svc.send_tailored_cv_for_posting_email(
+                user=current_user,
+                job_title=title_hint,
+                company=company_hint,
+                pdf_bytes=pdf_bytes,
+                pdf_filename=f"CV_{_safe_part(company_hint)}_{_safe_part(title_hint)}.pdf",
+            )
+
+    return ResumeResponse.model_validate(tailored_resume)
 
 
 @router.post("/upload", response_model=ResumeUploadResponse, status_code=201)

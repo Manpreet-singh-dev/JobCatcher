@@ -93,6 +93,29 @@ def verify_approval_token(token: str) -> dict:
     return payload
 
 
+def create_applied_confirm_token(user_id: str, application_id: str) -> str:
+    """JWT for one-click 'I applied' from the tailored CV email (long-lived)."""
+    expires = datetime.now(timezone.utc) + timedelta(days=90)
+    payload = {
+        "sub": str(user_id),
+        "application_id": str(application_id),
+        "exp": expires,
+        "iat": datetime.now(timezone.utc),
+        "type": "applied_confirm",
+    }
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+
+def verify_applied_confirm_token(token: str) -> dict:
+    payload = verify_token(token)
+    if payload.get("type") != "applied_confirm":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid applied-confirmation token type",
+        )
+    return payload
+
+
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: AsyncSession = Depends(get_db),

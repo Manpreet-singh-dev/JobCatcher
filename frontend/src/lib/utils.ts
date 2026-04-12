@@ -86,12 +86,42 @@ export function getStatusColor(status: ApplicationStatus): {
   border: string;
   dot: string;
 } {
-  const colors: Record<ApplicationStatus, { bg: string; text: string; border: string; dot: string }> = {
+  const colors: Record<string, { bg: string; text: string; border: string; dot: string }> = {
     pending_approval: {
       bg: "bg-accent-yellow/10",
       text: "text-accent-yellow",
       border: "border-accent-yellow/30",
       dot: "bg-accent-yellow",
+    },
+    cv_emailed: {
+      bg: "bg-accent/10",
+      text: "text-accent",
+      border: "border-accent/30",
+      dot: "bg-accent",
+    },
+    applied_confirmed: {
+      bg: "bg-accent/10",
+      text: "text-accent",
+      border: "border-accent/30",
+      dot: "bg-accent",
+    },
+    approved: {
+      bg: "bg-primary/10",
+      text: "text-primary-light",
+      border: "border-primary/30",
+      dot: "bg-primary",
+    },
+    submitted: {
+      bg: "bg-accent/10",
+      text: "text-accent",
+      border: "border-accent/30",
+      dot: "bg-accent",
+    },
+    failed: {
+      bg: "bg-accent-warm/10",
+      text: "text-accent-warm",
+      border: "border-accent-warm/30",
+      dot: "bg-accent-warm",
     },
     applied: {
       bg: "bg-primary/10",
@@ -131,12 +161,14 @@ export function getStatusColor(status: ApplicationStatus): {
     },
   };
 
-  return colors[status];
+  return colors[status] ?? colors.pending_approval;
 }
 
 export function getStatusLabel(status: ApplicationStatus | string): string {
   const labels: Record<string, string> = {
     pending_approval: "Pending Approval",
+    cv_emailed: "CV emailed",
+    applied_confirmed: "Applied (logged)",
     approved: "Approved",
     submitted: "Submitted",
     applied: "Applied",

@@ -262,8 +262,6 @@ interface OnboardingData {
   activeHoursEnd: string;
   timezone: string;
   maxApplicationsPerDay: number;
-  approvalMode: "always_ask" | "auto_high" | "fully_automatic";
-  fullyAutoConsent: boolean;
   notifyEmail: boolean;
   notifyWhatsApp: boolean;
   connectedEmail: string | null;
@@ -293,8 +291,6 @@ const defaultData: OnboardingData = {
   activeHoursEnd: "17:00",
   timezone: "UTC-5 (EST)",
   maxApplicationsPerDay: 5,
-  approvalMode: "always_ask",
-  fullyAutoConsent: false,
   notifyEmail: true,
   notifyWhatsApp: false,
   connectedEmail: null,
@@ -322,9 +318,7 @@ export default function OnboardingPage() {
       case 2:
         return true;
       case 3:
-        return (
-          data.approvalMode !== "fully_automatic" || data.fullyAutoConsent
-        );
+        return true;
       case 4:
         return true;
       default:
@@ -359,7 +353,6 @@ export default function OnboardingPage() {
         blacklisted_companies: data.blacklistedCompanies,
         min_match_score: data.minMatchScore,
         max_applications_per_day: data.maxApplicationsPerDay,
-        approval_mode: data.approvalMode,
       } as Record<string, unknown>);
       router.push("/dashboard");
     } catch (err) {
@@ -875,75 +868,6 @@ export default function OnboardingPage() {
                 </button>
                 <span className="text-sm text-[#55557A]">per day</span>
               </div>
-            </div>
-
-            <div>
-              <label className="mb-3 block text-sm font-medium text-[#8888AA]">
-                Approval Mode
-              </label>
-              <div className="space-y-3">
-                {(
-                  [
-                    {
-                      value: "always_ask",
-                      title: "Always Ask",
-                      desc: "Email approval for every application",
-                    },
-                    {
-                      value: "auto_high",
-                      title: "Auto-Apply High Confidence",
-                      desc: "≥90% match applies without approval",
-                    },
-                    {
-                      value: "fully_automatic",
-                      title: "Fully Automatic",
-                      desc: "All matched jobs applied automatically",
-                    },
-                  ] as const
-                ).map((mode) => (
-                  <label
-                    key={mode.value}
-                    className={`flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors ${
-                      data.approvalMode === mode.value
-                        ? "border-[#6C63FF] bg-[#6C63FF]/10"
-                        : "border-[#2E2E4A] bg-[#1A1A2E] hover:border-[#6C63FF]/50"
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="approvalMode"
-                      checked={data.approvalMode === mode.value}
-                      onChange={() => update("approvalMode", mode.value)}
-                      className="mt-0.5 accent-[#6C63FF]"
-                    />
-                    <div>
-                      <p className="text-sm font-medium text-[#F0F0FF]">
-                        {mode.title}
-                      </p>
-                      <p className="mt-0.5 text-xs text-[#8888AA]">
-                        {mode.desc}
-                      </p>
-                    </div>
-                  </label>
-                ))}
-              </div>
-
-              {data.approvalMode === "fully_automatic" && (
-                <label className="mt-3 flex items-start gap-2 rounded-xl border border-[#FFD93D]/20 bg-[#FFD93D]/5 p-3">
-                  <input
-                    type="checkbox"
-                    checked={data.fullyAutoConsent}
-                    onChange={(e) =>
-                      update("fullyAutoConsent", e.target.checked)
-                    }
-                    className="mt-0.5 accent-[#FFD93D]"
-                  />
-                  <span className="text-xs text-[#FFD93D]">
-                    I understand that fully automatic mode will apply to all
-                    matched jobs without my review. I consent to this behavior.
-                  </span>
-                </label>
-              )}
             </div>
 
             <div>

@@ -12,6 +12,10 @@ const badgeVariants = cva(
         default: "bg-bg-tertiary text-text-secondary border border-border",
         pending_approval:
           "bg-accent-yellow/10 text-accent-yellow border border-accent-yellow/20",
+        cv_emailed:
+          "bg-accent/10 text-accent border border-accent/20",
+        applied_confirmed:
+          "bg-accent/10 text-accent border border-accent/20",
         approved:
           "bg-primary/10 text-primary-light border border-primary/20",
         submitted:

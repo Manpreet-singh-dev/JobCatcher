@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Your tailored CV - JobCatcher</title>
+</head>
+<body style="margin: 0; padding: 0; background: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+  <div style="max-width: 600px; margin: 0 auto; padding: 40px 20px;">
+    <div style="background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+      <div style="background: #2563eb; padding: 24px; text-align: center;">
+        <h1 style="color: white; margin: 0; font-size: 24px;">JobCatcher</h1>
+      </div>
+      <div style="padding: 32px;">
+        <h2 style="color: #1e293b; margin: 0 0 8px 0;">Your tailored CV is ready</h2>
+        <p style="color: #64748b; margin: 0 0 24px 0;">Hi {{ user_name }},</p>
+        <p style="color: #475569;">We tailored your profile for this role (see attached PDF):</p>
+
+        <div style="background: #f8fafc; padding: 20px; border-radius: 8px; border-left: 4px solid #2563eb; margin: 20px 0;">
+          <h3 style="margin: 0 0 8px 0; color: #1e293b;">{{ job_title }}</h3>
+          <p style="margin: 0 0 4px 0; color: #64748b;">{{ company }} &bull; {{ location }}</p>
+          {% if show_match_score %}
+          <p style="margin: 12px 0 0 0;">
+            <span style="display: inline-block; padding: 4px 12px; background: #dbeafe; color: #1d4ed8; border-radius: 20px; font-weight: 600; font-size: 14px;">
+              {{ match_score }}% Match
+            </span>
+          </p>
+          {% endif %}
+        </div>
+
+        {% if match_summary %}
+        <h4 style="color: #1e293b; margin: 20px 0 8px 0;">Match notes</h4>
+        <p style="color: #475569; line-height: 1.6;">{{ match_summary }}</p>
+        {% endif %}
+
+        {% if confirm_applied_url %}
+        <p style="color: #475569; margin-top: 24px;">After you submit your application, confirm here so it shows in your <strong>Recent applications</strong> list:</p>
+        <div style="margin: 16px 0; text-align: center;">
+          <a href="{{ confirm_applied_url }}"
+             style="display: inline-block; padding: 12px 28px; background: #059669; color: white; text-decoration: none; border-radius: 8px; font-weight: 600;">
+            I applied to this job
+          </a>
+        </div>
+        <p style="color: #94a3b8; font-size: 12px;">You can also confirm from the JobCatcher app on the application detail page.</p>
+        {% endif %}
+
+        {% if apply_url %}
+        <p style="color: #475569; margin-top: 24px;">When you are ready, you can apply using the employer&apos;s link:</p>
+        <div style="margin: 16px 0; text-align: center;">
+          <a href="{{ apply_url }}"
+             style="display: inline-block; padding: 12px 28px; background: #2563eb; color: white; text-decoration: none; border-radius: 8px; font-weight: 600;">
+            Open application page
+          </a>
+        </div>
+        {% endif %}
+
+        <p style="color: #94a3b8; font-size: 13px; margin-top: 28px;">
+          Your JSON resume is also saved in JobCatcher under <strong>Resume Manager</strong> so you can download or edit it anytime.
+        </p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

@@ -17,7 +17,7 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "JobCatcher - AI-Powered Job Applications",
   description:
-    "Autonomous AI agent that discovers, matches, and applies to jobs on your behalf.",
+    "Tailor your CV to each role, get job links by email, and track applications in one place.",
 };
 
 export default function RootLayout({

@@ -3,7 +3,6 @@
 import * as React from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { User, Settings, LogOut, Bell, ChevronDown } from "lucide-react";
-import { AgentStatusPill } from "@/components/agent-status-pill";
 import { cn, getInitials, generateGradient } from "@/lib/utils";
 import { useAppStore } from "@/lib/store";
 
@@ -28,9 +27,6 @@ function Topbar({ title, className }: TopbarProps) {
 
       {/* Right section */}
       <div className="flex items-center gap-4">
-        {/* Agent Status Pill */}
-        <AgentStatusPill status={agentStatus} />
-
         {/* Notifications */}
         <button className="relative rounded-md p-2 text-text-muted hover:text-text-primary hover:bg-bg-tertiary transition-colors">
           <Bell className="h-5 w-5" />

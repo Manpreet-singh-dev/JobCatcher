@@ -8,6 +8,7 @@ import {
   Star,
   XCircle,
   Hourglass,
+  Mail,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { getStatusLabel } from "@/lib/utils";
@@ -20,6 +21,8 @@ interface StatusBadgeProps {
 
 const statusIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   pending_approval: Clock,
+  cv_emailed: Mail,
+  applied_confirmed: CheckCircle,
   approved: CheckCircle,
   submitted: CheckCircle,
   applied: CheckCircle,

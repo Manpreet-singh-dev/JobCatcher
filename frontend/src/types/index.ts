@@ -79,7 +79,7 @@ export interface JobFilters {
   salary_min?: number;
   salary_max?: number;
   source?: string;
-  sort_by?: "posted_at" | "match_score" | "salary";
+  sort_by?: "posted_at" | "salary";
   sort_order?: "asc" | "desc";
   page?: number;
   per_page?: number;
@@ -90,6 +90,8 @@ export interface JobFilters {
 
 export type ApplicationStatus =
   | "pending_approval"
+  | "cv_emailed"
+  | "applied_confirmed"
   | "approved"
   | "submitted"
   | "rejected"
@@ -104,6 +106,7 @@ export interface Application {
   tailored_resume_id?: string;
   match_score?: number;
   match_analysis?: MatchAnalysis;
+  user_applied_confirmed_at?: string | null;
   status: string;
   approval_token_expires_at?: string;
   approval_action_at?: string;
@@ -145,6 +148,7 @@ export interface AgentLog {
 export interface AnalyticsSummary {
   total_applications: number;
   pending_approval: number;
+  cv_emailed: number;
   approved: number;
   submitted: number;
   rejected: number;
