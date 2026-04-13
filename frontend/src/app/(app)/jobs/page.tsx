@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   Search,
   List,
@@ -528,8 +529,12 @@ export default function JobsPage() {
                         {applyingId === job.id ? "Sending…" : "Email CV + posting link"}
                       </button>
                       {rowStatus === "cv_requested" && (
-                        <p className="text-center text-[11px] font-medium text-[#00D4AA] sm:text-right">
-                          Queued — check your inbox
+                        <p className="text-center text-[11px] leading-relaxed text-[#8888AA] sm:text-right">
+                          <Link href="/applications" className="font-medium text-[#6C63FF] hover:underline">
+                            My Applications
+                          </Link>{" "}
+                          <span className="text-[#00D4AA]">— role added.</span> Tailoring runs in the background; you
+                          will receive the PDF by email when it is ready.
                         </p>
                       )}
                     </div>
@@ -632,7 +637,12 @@ export default function JobsPage() {
                       {applyingId === job.id ? "Sending…" : "Email CV + posting link"}
                     </button>
                     {cardStatus === "cv_requested" && (
-                      <p className="text-center text-[11px] font-medium text-[#00D4AA]">Queued — check inbox</p>
+                      <p className="text-center text-[11px] leading-relaxed text-[#8888AA]">
+                        <Link href="/applications" className="font-medium text-[#6C63FF] hover:underline">
+                          My Applications
+                        </Link>{" "}
+                        <span className="text-[#00D4AA]">— role added.</span> Email arrives when tailoring finishes.
+                      </p>
                     )}
 
                     <div className="flex gap-2">

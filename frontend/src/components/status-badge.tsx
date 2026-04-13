@@ -9,6 +9,7 @@ import {
   XCircle,
   Hourglass,
   Mail,
+  Loader2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { getStatusLabel } from "@/lib/utils";
@@ -21,6 +22,7 @@ interface StatusBadgeProps {
 
 const statusIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   pending_approval: Clock,
+  cv_preparing: Loader2,
   cv_emailed: Mail,
   applied_confirmed: CheckCircle,
   approved: CheckCircle,
@@ -37,10 +39,11 @@ const statusIcons: Record<string, React.ComponentType<{ className?: string }>> =
 function StatusBadge({ status, className }: StatusBadgeProps) {
   const Icon = statusIcons[status] || CheckCircle;
   const variant = status as ApplicationStatus;
+  const iconClass = status === "cv_preparing" ? "h-3 w-3 animate-spin" : "h-3 w-3";
 
   return (
     <Badge variant={variant} className={className}>
-      <Icon className="h-3 w-3" />
+      <Icon className={iconClass} />
       {getStatusLabel(variant)}
     </Badge>
   );

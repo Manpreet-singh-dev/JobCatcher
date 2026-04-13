@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { User, Settings, LogOut, Bell, ChevronDown } from "lucide-react";
+import { User, Settings, LogOut, ChevronDown } from "lucide-react";
 import { cn, getInitials, generateGradient } from "@/lib/utils";
 import { useAppStore } from "@/lib/store";
 
@@ -12,8 +12,7 @@ interface TopbarProps {
 }
 
 function Topbar({ title, className }: TopbarProps) {
-  const { user, agentStatus, notifications } = useAppStore();
-  const unreadCount = notifications.length;
+  const { user } = useAppStore();
 
   return (
     <header
@@ -27,16 +26,6 @@ function Topbar({ title, className }: TopbarProps) {
 
       {/* Right section */}
       <div className="flex items-center gap-4">
-        {/* Notifications */}
-        <button className="relative rounded-md p-2 text-text-muted hover:text-text-primary hover:bg-bg-tertiary transition-colors">
-          <Bell className="h-5 w-5" />
-          {unreadCount > 0 && (
-            <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-accent-warm text-[10px] font-bold text-white">
-              {unreadCount > 9 ? "9+" : unreadCount}
-            </span>
-          )}
-        </button>
-
         {/* User menu */}
         <DropdownMenu.Root>
           <DropdownMenu.Trigger asChild>

@@ -63,7 +63,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: celery -A workers.celery_app worker --loglevel=info --concurrency=4
+    # Must consume the same queues as task_routes (default, ai, email, scrapers, browser).
+    command: >
+      celery -A workers.celery_app worker --loglevel=info --concurrency=4
+      -Q default,ai,email,scrapers,browser
 
   celery-beat:
     build:

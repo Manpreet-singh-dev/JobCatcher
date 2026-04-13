@@ -90,6 +90,7 @@ export interface JobFilters {
 
 export type ApplicationStatus =
   | "pending_approval"
+  | "cv_preparing"
   | "cv_emailed"
   | "applied_confirmed"
   | "approved"

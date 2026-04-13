@@ -1,5 +1,6 @@
 import base64
 import logging
+from pathlib import Path
 from urllib.parse import quote
 from datetime import datetime, timezone
 from typing import Any
@@ -27,8 +28,16 @@ from app.models.user import User
 
 logger = logging.getLogger(__name__)
 
+# Resolve templates from package tree (works regardless of process cwd, e.g. Celery in Docker).
+_EMAIL_TEMPLATE_DIR = Path(__file__).resolve().parents[3] / "email_templates"
+if not _EMAIL_TEMPLATE_DIR.is_dir():
+    logger.warning(
+        "email_templates directory not found at %s — HTML fallbacks will be used",
+        _EMAIL_TEMPLATE_DIR,
+    )
+
 jinja_env = Environment(
-    loader=FileSystemLoader("email_templates"),
+    loader=FileSystemLoader(str(_EMAIL_TEMPLATE_DIR)),
     autoescape=select_autoescape(["html"]),
 )
 
@@ -36,7 +45,8 @@ jinja_env = Environment(
 class EmailService:
     def __init__(self, db: AsyncSession):
         self.db = db
-        self.sg_client = SendGridAPIClient(settings.SENDGRID_API_KEY) if settings.SENDGRID_API_KEY else None
+        key = (settings.SENDGRID_API_KEY or "").strip()
+        self.sg_client = SendGridAPIClient(key) if key else None
 
     async def _send_email(
         self,
@@ -72,6 +82,13 @@ class EmailService:
 
             response = self.sg_client.send(message)
             email_status = "sent" if response.status_code in (200, 201, 202) else "failed"
+            if email_status != "sent":
+                logger.warning(
+                    "SendGrid non-success for %s: HTTP %s body=%s",
+                    to_email,
+                    response.status_code,
+                    getattr(response, "body", b"")[:500],
+                )
 
             log_entry = EmailLog(
                 user_id=user.id,
@@ -300,12 +317,15 @@ class EmailService:
         match_summary = ""
         if application.match_analysis:
             ma = application.match_analysis
+            reasons = ma.get("match_reasons") or []
+            if isinstance(reasons, list) and reasons:
+                match_summary = " ".join(str(r) for r in reasons[:8])
             strengths = ma.get("strengths", [])
             concerns = ma.get("concerns", [])
-            if strengths or concerns:
+            if not match_summary and (strengths or concerns):
                 match_summary = (
-                    f"Strengths: {', '.join(strengths)}. "
-                    f"Concerns: {', '.join(concerns) if concerns else 'None'}."
+                    f"Strengths: {', '.join(str(s) for s in strengths)}. "
+                    f"Concerns: {', '.join(str(c) for c in concerns) if concerns else 'None'}."
                 )
 
         confirm_url = (

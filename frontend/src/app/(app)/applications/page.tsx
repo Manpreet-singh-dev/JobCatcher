@@ -9,6 +9,7 @@ import type { Application as BackendApplication } from "@/types";
 
 type AppStatus =
   | "pending_approval"
+  | "cv_preparing"
   | "cv_emailed"
   | "applied_confirmed"
   | "approved"

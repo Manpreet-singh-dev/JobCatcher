@@ -7,6 +7,11 @@ import openai
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.core.config import settings
+from app.services.ai.prompts import (
+    MATCH_FOR_JOB_TAILORING,
+    RESUME_JSON_TO_LATEX_DOCUMENT,
+    TAILOR_RESUME_FOR_JOB,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -234,6 +239,76 @@ class AIService:
         )
         response = await self._call_llm(prompt, max_tokens=8192)
         return self._extract_json(response)
+
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=10))
+    async def analyze_match_for_job_tailoring(
+        self,
+        candidate_json: dict[str, Any],
+        *,
+        job_title: str,
+        company: str,
+        location: str,
+        job_description: str,
+        required_skills: list[str],
+    ) -> dict[str, Any]:
+        """JSON match analysis used before resume tailoring (jobs feed / Celery)."""
+        prompt = MATCH_FOR_JOB_TAILORING.format(
+            candidate_json=json.dumps(candidate_json, indent=2),
+            job_title=job_title,
+            company=company,
+            location=location,
+            job_description=job_description,
+            required_skills=", ".join(required_skills or []),
+        )
+        response_text = await self._call_llm(prompt)
+        return self._extract_json(response_text)
+
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=10))
+    async def tailor_resume_json_for_job(
+        self,
+        resume_json: dict[str, Any],
+        match_analysis: dict[str, Any],
+        *,
+        job_title: str,
+        company: str,
+        location: str,
+        job_description: str,
+        required_skills: list[str],
+    ) -> dict[str, Any]:
+        """Return tailored resume JSON for a structured job posting (truthful edits only)."""
+        prompt = TAILOR_RESUME_FOR_JOB.format(
+            resume_json=json.dumps(resume_json, indent=2),
+            job_title=job_title,
+            company=company,
+            location=location,
+            job_description=job_description,
+            required_skills=", ".join(required_skills or []),
+            match_analysis=json.dumps(match_analysis, indent=2),
+        )
+        response_text = await self._call_llm(prompt, max_tokens=8192)
+        return self._extract_json(response_text)
+
+    @staticmethod
+    def _strip_latex_fences(text: str) -> str:
+        t = text.strip()
+        if not t.startswith("```"):
+            return t
+        lines = t.split("\n")
+        if lines and lines[0].strip().startswith("```"):
+            lines = lines[1:]
+        while lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        return "\n".join(lines).strip()
+
+    @retry(stop=stop_after_attempt(2), wait=wait_exponential(min=1, max=15))
+    async def resume_json_to_latex_document(self, resume_json: dict[str, Any]) -> str:
+        """Return a full LaTeX source document for the given resume JSON (for PDF compilation)."""
+        prompt = RESUME_JSON_TO_LATEX_DOCUMENT.replace(
+            "__RESUME_JSON__",
+            json.dumps(resume_json, indent=2),
+        )
+        response_text = await self._call_llm(prompt, max_tokens=8192)
+        return self._strip_latex_fences(response_text.strip())
 
     @retry(stop=stop_after_attempt(2), wait=wait_exponential(min=1, max=5))
     async def answer_question(

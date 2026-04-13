@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from app.services.resume_pdf import generate_resume_pdf
+from app.services.resume_pdf import generate_resume_pdf_async
 from workers.celery_app import celery_app, get_db, run_async
 
 logger = logging.getLogger(__name__)
@@ -70,7 +70,7 @@ def submit_application(self, application_id: str):
 
             pdf_path = None
             if resume and resume.parsed_json:
-                pdf_path = generate_resume_pdf(resume.parsed_json)
+                pdf_path = await generate_resume_pdf_async(resume.parsed_json)
 
             application.status = "submitting"
             await db.flush()

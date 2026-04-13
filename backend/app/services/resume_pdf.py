@@ -8,6 +8,23 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+async def generate_resume_pdf_async(parsed_json: dict[str, Any]) -> Path | None:
+    """Ask the model for LaTeX, compile to PDF; fall back to HTML/WeasyPrint if LaTeX fails."""
+    from app.services.ai.service import ai_service
+    from app.services.resume_latex import compile_latex_to_pdf
+
+    try:
+        tex = await ai_service.resume_json_to_latex_document(parsed_json)
+        pdf_path = compile_latex_to_pdf(tex)
+        if pdf_path and pdf_path.is_file():
+            return pdf_path
+        logger.warning("LaTeX compile returned no PDF; falling back to HTML renderer")
+    except Exception:
+        logger.warning("LaTeX PDF generation failed; falling back to HTML renderer", exc_info=True)
+
+    return generate_resume_pdf(parsed_json)
+
+
 def generate_resume_pdf(parsed_json: dict[str, Any]) -> Path | None:
     """Render resume JSON to a temporary PDF using WeasyPrint."""
     try:

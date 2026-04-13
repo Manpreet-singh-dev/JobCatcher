@@ -153,7 +153,7 @@ def send_tailored_cv_email(self, application_id: str):
         from app.models.job import Job
         from app.models.user import User
         from app.services.email.service import EmailService
-        from app.services.resume_pdf import generate_resume_pdf
+        from app.services.resume_pdf import generate_resume_pdf_async
 
         async with get_db() as db:
             app_result = await db.execute(
@@ -177,7 +177,7 @@ def send_tailored_cv_email(self, application_id: str):
                 logger.error("Missing data for tailored CV email %s", application_id)
                 return {"status": "error", "reason": "missing_data"}
 
-            pdf_path = generate_resume_pdf(tailored.parsed_json)
+            pdf_path = await generate_resume_pdf_async(tailored.parsed_json)
             if not pdf_path or not pdf_path.exists():
                 logger.error("Could not build PDF for application %s", application_id)
                 return {"status": "error", "reason": "pdf_failed"}

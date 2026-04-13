@@ -582,6 +582,7 @@ export default function ApplicationDetailPage() {
               onChange={(e) => setStatusOverride(e.target.value)}
               className="w-full rounded-xl border border-[#2E2E4A] bg-[#0F0F1A] px-4 py-3 text-sm text-[#F0F0FF] outline-none focus:border-[#6C63FF]"
             >
+              <option value="cv_preparing">Preparing CV</option>
               <option value="cv_emailed">CV emailed</option>
               <option value="applied_confirmed">Applied (logged)</option>
               <option value="applied">Applied</option>

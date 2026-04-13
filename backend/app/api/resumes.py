@@ -1,4 +1,3 @@
-import json
 import uuid
 from pathlib import Path
 
@@ -19,7 +18,7 @@ from app.schemas.resume import (
     ResumeUploadResponse,
     TailorFromPostingRequest,
 )
-from app.services.ai.service import AIService, ai_service
+from app.services.ai.service import ai_service
 
 router = APIRouter(prefix="/api/resumes", tags=["resumes"])
 
@@ -52,8 +51,6 @@ async def tailor_from_posting(
     db: AsyncSession = Depends(get_db),
 ):
     """Generate a tailored resume JSON from a pasted job description (optional PDF to email)."""
-    from workers.tailoring import TAILOR_PROMPT
-
     resume_result = await db.execute(
         select(Resume)
         .where(Resume.user_id == current_user.id, Resume.is_base.is_(True))
@@ -76,19 +73,16 @@ async def tailor_from_posting(
         "missing_skills": [],
         "match_reasons": [],
     }
-    ai = AIService()
-    prompt = TAILOR_PROMPT.format(
-        resume_json=json.dumps(base_resume.parsed_json, indent=2),
-        job_title=body.job_title or "Role from your posting",
-        company=body.company or "Employer",
-        location=body.location or "Not specified",
-        job_description=body.description.strip(),
-        required_skills=", ".join(body.required_skills or []),
-        match_analysis=json.dumps(match_stub, indent=2),
-    )
     try:
-        response_text = await ai._call_llm(prompt, max_tokens=8192)
-        tailored_json = ai._extract_json(response_text)
+        tailored_json = await ai_service.tailor_resume_json_for_job(
+            base_resume.parsed_json,
+            match_stub,
+            job_title=body.job_title or "Role from your posting",
+            company=body.company or "Employer",
+            location=body.location or "Not specified",
+            job_description=body.description.strip(),
+            required_skills=list(body.required_skills or []),
+        )
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -110,9 +104,9 @@ async def tailor_from_posting(
 
     if body.email_pdf:
         from app.services.email.service import EmailService
-        from app.services.resume_pdf import generate_resume_pdf
+        from app.services.resume_pdf import generate_resume_pdf_async
 
-        pdf_path = generate_resume_pdf(tailored_json)
+        pdf_path = await generate_resume_pdf_async(tailored_json)
         if pdf_path and pdf_path.exists():
             try:
                 pdf_bytes = pdf_path.read_bytes()

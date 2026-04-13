@@ -93,6 +93,12 @@ export function getStatusColor(status: ApplicationStatus): {
       border: "border-accent-yellow/30",
       dot: "bg-accent-yellow",
     },
+    cv_preparing: {
+      bg: "bg-accent-yellow/10",
+      text: "text-accent-yellow",
+      border: "border-accent-yellow/30",
+      dot: "bg-accent-yellow",
+    },
     cv_emailed: {
       bg: "bg-accent/10",
       text: "text-accent",
@@ -167,6 +173,7 @@ export function getStatusColor(status: ApplicationStatus): {
 export function getStatusLabel(status: ApplicationStatus | string): string {
   const labels: Record<string, string> = {
     pending_approval: "Pending Approval",
+    cv_preparing: "Preparing CV",
     cv_emailed: "CV emailed",
     applied_confirmed: "Applied (logged)",
     approved: "Approved",

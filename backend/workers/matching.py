@@ -2,31 +2,12 @@ import json
 import logging
 from typing import Any
 
+from app.services.ai.prompts import MATCH_FOR_JOB_TAILORING
 from workers.celery_app import celery_app, get_db, get_redis, run_async
 
 logger = logging.getLogger(__name__)
 
-MATCH_PROMPT = """You are a job-candidate matching expert. Given the candidate profile and job description below, return a JSON object with:
-{{
-  "match_score": 0-100,
-  "matched_skills": ["skills found in both"],
-  "missing_skills": ["required skills candidate lacks"],
-  "match_reasons": ["3-5 bullet points explaining why this is a good match"],
-  "concerns": ["any red flags or gaps"],
-  "recommended": true | false
-}}
-
-Candidate Profile:
-{candidate_json}
-
-Job Description:
-Title: {job_title}
-Company: {company}
-Location: {location}
-Description: {job_description}
-Required Skills: {required_skills}
-
-Return ONLY valid JSON. No explanations."""
+MATCH_PROMPT = MATCH_FOR_JOB_TAILORING
 
 JOB_QUEUE_KEY = "jobcatcher:jobs:{user_id}"
 DAILY_COUNT_KEY = "jobcatcher:daily_apps:{user_id}"

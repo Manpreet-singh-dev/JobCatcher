@@ -353,7 +353,9 @@ export const jobs = {
     client.get<PaginatedResponse<Job>>("/jobs", filters as Record<string, string | number | boolean | undefined>),
   getById: (id: string) => client.get<Job>(`/jobs/${id}`),
   requestTailoredCv: (id: string) =>
-    client.post<{ message: string; job_id: string }>(`/jobs/${id}/tailor-and-email`),
+    client.post<{ message: string; job_id: string; application_id: string }>(
+      `/jobs/${id}/tailor-and-email`
+    ),
 };
 
 export const applications = {

@@ -4,12 +4,14 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import Select, and_, func, or_, select
+from sqlalchemy import Select, and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.models.application import Application
 from app.models.job import Job
+from app.models.resume import Resume
 from app.models.user import User
 from app.models.user_preference import UserPreference
 from app.schemas.job import JobListResponse, JobResponse
@@ -247,7 +249,12 @@ async def queue_tailored_cv_email(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Queue AI tailoring for this job and email a PDF tailored CV to the signed-in user."""
+    """Queue AI tailoring for this job and email a PDF tailored CV to the signed-in user.
+
+    Creates an application row immediately (status ``cv_preparing``) so My Applications
+    lists the role while tailoring runs; the worker updates it when the CV is ready and
+    the email task is queued.
+    """
     result = await db.execute(select(Job).where(Job.id == job_id))
     job = result.scalar_one_or_none()
     if not job:
@@ -256,10 +263,81 @@ async def queue_tailored_cv_email(
             detail="Job not found",
         )
 
+    resume_result = await db.execute(
+        select(Resume)
+        .where(Resume.user_id == current_user.id, Resume.is_base.is_(True))
+        .order_by(Resume.created_at.desc())
+        .limit(1)
+    )
+    base_resume = resume_result.scalar_one_or_none()
+    if not base_resume or not base_resume.parsed_json:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Upload a base resume before requesting a tailored CV.",
+        )
+
+    tailored_existing = await db.execute(
+        select(Application)
+        .where(
+            Application.user_id == current_user.id,
+            Application.job_id == job_id,
+            Application.tailored_resume_id.isnot(None),
+        )
+        .order_by(Application.created_at.desc())
+        .limit(1)
+    )
+    existing_app = tailored_existing.scalar_one_or_none()
+    if existing_app:
+        from workers.tailoring import tailor_resume_for_job
+
+        tailor_resume_for_job.delay(str(current_user.id), str(job_id))
+        return {
+            "message": "Tailoring started. You will receive an email with your tailored CV shortly.",
+            "job_id": str(job_id),
+            "application_id": str(existing_app.id),
+        }
+
+    await db.execute(
+        delete(Application).where(
+            Application.user_id == current_user.id,
+            Application.job_id == job_id,
+            Application.tailored_resume_id.is_(None),
+            Application.status != "cv_preparing",
+        )
+    )
+
+    prep_result = await db.execute(
+        select(Application)
+        .where(
+            Application.user_id == current_user.id,
+            Application.job_id == job_id,
+            Application.tailored_resume_id.is_(None),
+            Application.status == "cv_preparing",
+        )
+        .order_by(Application.created_at.desc())
+        .limit(1)
+    )
+    placeholder = prep_result.scalar_one_or_none()
+    if not placeholder:
+        placeholder = Application(
+            user_id=current_user.id,
+            job_id=job_id,
+            resume_id=base_resume.id,
+            tailored_resume_id=None,
+            match_score=None,
+            match_analysis=None,
+            status="cv_preparing",
+        )
+        db.add(placeholder)
+
+    await db.flush()
+    await db.refresh(placeholder)
+
     from workers.tailoring import tailor_resume_for_job
 
     tailor_resume_for_job.delay(str(current_user.id), str(job_id))
     return {
         "message": "Tailoring started. You will receive an email with your tailored CV shortly.",
         "job_id": str(job_id),
+        "application_id": str(placeholder.id),
     }
