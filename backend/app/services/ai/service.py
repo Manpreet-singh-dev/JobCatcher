@@ -4,6 +4,7 @@ from typing import Any
 
 import anthropic
 import openai
+from groq import AsyncGroq
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.core.config import settings
@@ -18,8 +19,8 @@ logger = logging.getLogger(__name__)
 RESUME_PARSE_PROMPT = """You are an expert resume parser. Parse the following resume text into structured JSON.
 
 Return a JSON object with these exact fields:
-{
-  "personal_info": {
+{{
+  "personal_info": {{
     "name": "",
     "email": "",
     "phone": "",
@@ -27,10 +28,10 @@ Return a JSON object with these exact fields:
     "linkedin": "",
     "github": "",
     "portfolio": ""
-  },
+  }},
   "summary": "Professional summary text",
   "experience": [
-    {
+    {{
       "company": "",
       "title": "",
       "location": "",
@@ -39,40 +40,40 @@ Return a JSON object with these exact fields:
       "current": false,
       "description": "",
       "achievements": [""]
-    }
+    }}
   ],
   "education": [
-    {
+    {{
       "institution": "",
       "degree": "",
       "field": "",
       "start_date": "",
       "end_date": "",
       "gpa": ""
-    }
+    }}
   ],
   "skills": ["skill1", "skill2"],
   "certifications": [
-    {
+    {{
       "name": "",
       "issuer": "",
       "date": "",
       "expiry": ""
-    }
+    }}
   ],
   "projects": [
-    {
+    {{
       "name": "",
       "description": "",
       "technologies": [""],
       "url": ""
-    }
+    }}
   ],
   "languages": ["English"]
-}
+}}
 
 Resume text:
-{resume_text}
+{{resume_text}}
 
 Return ONLY valid JSON. No explanations."""
 
@@ -150,6 +151,7 @@ class AIService:
     def __init__(self):
         self._anthropic_client: anthropic.AsyncAnthropic | None = None
         self._openai_client: openai.AsyncOpenAI | None = None
+        self._groq_client: AsyncGroq | None = None
 
     @property
     def anthropic_client(self) -> anthropic.AsyncAnthropic:
@@ -167,6 +169,14 @@ class AIService:
             )
         return self._openai_client
 
+    @property
+    def groq_client(self) -> AsyncGroq:
+        if self._groq_client is None:
+            self._groq_client = AsyncGroq(
+                api_key=settings.GROQ_API_KEY
+            )
+        return self._groq_client
+
     async def _call_claude(self, prompt: str, max_tokens: int = 4096) -> str:
         response = await self.anthropic_client.messages.create(
             model="claude-sonnet-4-20250514",
@@ -177,26 +187,48 @@ class AIService:
 
     async def _call_openai(self, prompt: str, max_tokens: int = 4096) -> str:
         response = await self.openai_client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4o-mini",
+            max_tokens=max_tokens,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return response.choices[0].message.content or ""
+
+    async def _call_groq(self, prompt: str, max_tokens: int = 4096) -> str:
+        response = await self.groq_client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
             max_tokens=max_tokens,
             messages=[{"role": "user", "content": prompt}],
         )
         return response.choices[0].message.content or ""
 
     async def _call_llm(self, prompt: str, max_tokens: int = 4096) -> str:
+        # Try Anthropic first
         if settings.ANTHROPIC_API_KEY:
             try:
+                logger.info("Calling Claude API...")
                 return await self._call_claude(prompt, max_tokens)
             except Exception as e:
-                logger.warning(f"Claude API failed, falling back to OpenAI: {e}")
-                if settings.OPENAI_API_KEY:
-                    return await self._call_openai(prompt, max_tokens)
-                raise
+                logger.warning(f"Claude API failed: {e}")
 
+        # Try OpenAI second
         if settings.OPENAI_API_KEY:
-            return await self._call_openai(prompt, max_tokens)
+            try:
+                logger.info("Calling OpenAI API...")
+                return await self._call_openai(prompt, max_tokens)
+            except Exception as e:
+                logger.warning(f"OpenAI API failed: {e}")
 
-        raise RuntimeError("No AI API key configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY.")
+        # Try Groq as fallback
+        if settings.GROQ_API_KEY:
+            try:
+                logger.info("Calling Groq API...")
+                result = await self._call_groq(prompt, max_tokens)
+                logger.info("Groq API call successful")
+                return result
+            except Exception as e:
+                logger.error(f"Groq API failed: {e}", exc_info=True)
+
+        raise RuntimeError("No AI API key configured or all providers failed. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or GROQ_API_KEY.")
 
     def _extract_json(self, text: str) -> dict[str, Any]:
         text = text.strip()

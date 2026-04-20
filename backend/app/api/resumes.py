@@ -1,3 +1,4 @@
+import logging
 import uuid
 from pathlib import Path
 
@@ -19,6 +20,8 @@ from app.schemas.resume import (
     TailorFromPostingRequest,
 )
 from app.services.ai.service import ai_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/resumes", tags=["resumes"])
 
@@ -51,6 +54,7 @@ async def tailor_from_posting(
     db: AsyncSession = Depends(get_db),
 ):
     """Generate a tailored resume JSON from a pasted job description (optional PDF to email)."""
+    logger.info(f"=== TAILOR FROM POSTING CALLED === User: {current_user.id}, Body: {body}")
     resume_result = await db.execute(
         select(Resume)
         .where(Resume.user_id == current_user.id, Resume.is_base.is_(True))
@@ -58,10 +62,49 @@ async def tailor_from_posting(
         .limit(1)
     )
     base_resume = resume_result.scalar_one_or_none()
-    if not base_resume or not base_resume.parsed_json:
+    logger.info(f"Base resume query result: {base_resume}")
+    if not base_resume:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Upload a base resume first so we can tailor it.",
+        )
+
+    # Re-extract content from PDF if file exists, otherwise use stored parsed_json
+    resume_json = base_resume.parsed_json
+    logger.info(f"Base resume has parsed_json: {bool(resume_json)}, file_path: {base_resume.file_path}")
+
+    # Try to extract from PDF file if we don't have parsed_json or want fresh extraction
+    if not resume_json and base_resume.file_path:
+        logger.info(f"Attempting to extract from PDF: {base_resume.file_path}")
+        pdf_file_path = _safe_resume_file_path(base_resume.file_path)
+        logger.info(f"Safe file path: {pdf_file_path}, exists: {pdf_file_path.exists() if pdf_file_path else False}")
+        if pdf_file_path and pdf_file_path.exists():
+            try:
+                import io
+                import pdfplumber
+                pdf_bytes = pdf_file_path.read_bytes()
+                logger.info(f"Read {len(pdf_bytes)} bytes from PDF")
+                with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+                    text_content = "\n".join(
+                        page.extract_text() or "" for page in pdf.pages
+                    )
+                logger.info(f"Extracted {len(text_content)} characters from PDF")
+                if len(text_content.strip()) > 50:
+                    logger.info("Calling AI service to parse resume...")
+                    resume_json = await ai_service.parse_resume(text_content)
+                    logger.info(f"AI parsing successful: {bool(resume_json)}")
+                    # Update the base resume with parsed content for future use
+                    if resume_json:
+                        base_resume.parsed_json = resume_json
+                        await db.flush()
+                        logger.info("Updated base resume with parsed JSON")
+            except Exception as e:
+                logger.error(f"Failed to extract/parse PDF content: {e}", exc_info=True)
+
+    if not resume_json:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Could not extract content from base resume. The PDF may be corrupted or empty.",
         )
 
     match_stub = {
@@ -75,7 +118,7 @@ async def tailor_from_posting(
     }
     try:
         tailored_json = await ai_service.tailor_resume_json_for_job(
-            base_resume.parsed_json,
+            resume_json,
             match_stub,
             job_title=body.job_title or "Role from your posting",
             company=body.company or "Employer",
@@ -91,45 +134,79 @@ async def tailor_from_posting(
 
     title_hint = body.job_title or "Custom posting"
     company_hint = body.company or "Posted role"
+
+    # Helper function to sanitize filenames
+    def _sanitize_filename(text: str) -> str:
+        """Sanitize text for use in filename."""
+        safe = "".join(c if c.isalnum() or c in (" ", "-", "_") else "_" for c in text)
+        return safe.strip()[:50] or "Resume"
+
+    # Generate readable filename
+    company_safe = _sanitize_filename(company_hint)
+    job_safe = _sanitize_filename(title_hint)
+    filename = f"{company_safe}_{job_safe}_{uuid.uuid4().hex[:8]}.pdf"
+
+    # Generate and save PDF for the tailored resume (always generate, not just for email)
+    pdf_bytes = None
+    file_path = None
+    from app.services.resume_pdf import generate_resume_pdf_async
+
+    logger.info("Starting PDF generation for tailored resume...")
+    pdf_path = await generate_resume_pdf_async(tailored_json)
+    logger.info(f"PDF generation result: {pdf_path}, exists: {pdf_path.exists() if pdf_path else False}")
+    if pdf_path and pdf_path.exists():
+        try:
+            pdf_bytes = pdf_path.read_bytes()
+            logger.info(f"Read {len(pdf_bytes)} bytes from generated PDF")
+
+            # Save PDF to permanent location with company name
+            dir_path = f"{UPLOAD_DIR}/{current_user.id}"
+            await aiofiles.os.makedirs(dir_path, exist_ok=True)
+
+            file_path = f"{UPLOAD_DIR}/{current_user.id}/{filename}"
+            async with aiofiles.open(file_path, "wb") as f:
+                await f.write(pdf_bytes)
+
+            logger.info(f"Saved tailored PDF to {file_path}")
+        except Exception as e:
+            logger.error(f"Failed to save tailored PDF: {e}", exc_info=True)
+        finally:
+            try:
+                pdf_path.unlink()
+            except OSError:
+                pass
+    else:
+        logger.error(f"PDF generation failed or returned no file: {pdf_path}")
+
     tailored_resume = Resume(
         user_id=current_user.id,
         version_name=f"Tailored: {title_hint} ({company_hint})",
         is_base=False,
         parsed_json=tailored_json,
-        original_filename=base_resume.original_filename,
+        original_filename=filename,
+        file_path=file_path,
     )
     db.add(tailored_resume)
     await db.flush()
     await db.refresh(tailored_resume)
 
-    if body.email_pdf:
+    if body.email_pdf and pdf_bytes:
         from app.services.email.service import EmailService
-        from app.services.resume_pdf import generate_resume_pdf_async
 
-        pdf_path = await generate_resume_pdf_async(tailored_json)
-        if pdf_path and pdf_path.exists():
-            try:
-                pdf_bytes = pdf_path.read_bytes()
-            finally:
-                try:
-                    pdf_path.unlink()
-                except OSError:
-                    pass
+        def _safe_part(text: str, max_len: int = 32) -> str:
+            out = "".join(
+                c for c in (text or "") if c.isalnum() or c in (" ", "-", "_")
+            ).strip()
+            return (out[:max_len] or "CV").replace(" ", "_")
 
-            def _safe_part(text: str, max_len: int = 32) -> str:
-                out = "".join(
-                    c for c in (text or "") if c.isalnum() or c in (" ", "-", "_")
-                ).strip()
-                return (out[:max_len] or "CV").replace(" ", "_")
-
-            email_svc = EmailService(db)
-            await email_svc.send_tailored_cv_for_posting_email(
-                user=current_user,
-                job_title=title_hint,
-                company=company_hint,
-                pdf_bytes=pdf_bytes,
-                pdf_filename=f"CV_{_safe_part(company_hint)}_{_safe_part(title_hint)}.pdf",
-            )
+        email_svc = EmailService(db)
+        await email_svc.send_tailored_cv_for_posting_email(
+            user=current_user,
+            job_title=title_hint,
+            company=company_hint,
+            pdf_bytes=pdf_bytes,
+            pdf_filename=f"CV_{_safe_part(company_hint)}_{_safe_part(title_hint)}.pdf",
+        )
 
     return ResumeResponse.model_validate(tailored_resume)
 

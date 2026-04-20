@@ -144,6 +144,40 @@ def tailor_resume_for_job(
                 await _mark_cv_preparing_failed()
                 return {"status": "error", "reason": "ai_tailoring_failed"}
 
+            # Generate PDF from tailored resume JSON
+            from app.services.resume_pdf import generate_resume_pdf_async
+            import aiofiles
+            import aiofiles.os
+            from pathlib import Path
+
+            pdf_path = None
+            file_path = None
+            try:
+                pdf_path = await generate_resume_pdf_async(tailored_json)
+                if pdf_path and pdf_path.exists():
+                    # Save PDF to uploads directory
+                    upload_dir = Path(f"uploads/resumes/{uid}")
+                    await aiofiles.os.makedirs(str(upload_dir), exist_ok=True)
+
+                    tailored_id = uuid.uuid4()
+                    file_path = f"uploads/resumes/{uid}/{tailored_id}.pdf"
+
+                    # Copy the temp PDF to the permanent location
+                    pdf_bytes = pdf_path.read_bytes()
+                    async with aiofiles.open(file_path, "wb") as f:
+                        await f.write(pdf_bytes)
+
+                    logger.info(f"Saved tailored PDF to {file_path}")
+            except Exception as e:
+                logger.error(f"Failed to save tailored PDF: {e}", exc_info=True)
+            finally:
+                # Clean up temp file
+                if pdf_path and pdf_path.exists():
+                    try:
+                        pdf_path.unlink()
+                    except OSError:
+                        pass
+
             tailored_resume = Resume(
                 id=uuid.uuid4(),
                 user_id=uid,
@@ -151,6 +185,7 @@ def tailor_resume_for_job(
                 is_base=False,
                 parsed_json=tailored_json,
                 original_filename=base_resume.original_filename,
+                file_path=file_path,
             )
             db.add(tailored_resume)
             await db.flush()

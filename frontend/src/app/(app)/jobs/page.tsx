@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Search,
   List,
@@ -161,6 +162,7 @@ function mapApiJobToView(job: BackendJob): Job {
 const PER_PAGE = 20;
 
 export default function JobsPage() {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [allJobs, setAllJobs] = useState<Job[]>([]);
   const [total, setTotal] = useState(0);
@@ -405,7 +407,8 @@ export default function JobsPage() {
             return (
               <article
                 key={job.id}
-                className="overflow-hidden rounded-xl border border-[#2E2E4A] bg-[#1A1A2E] shadow-sm transition-all hover:border-[#6C63FF]/40 hover:shadow-[0_8px_32px_rgba(0,0,0,0.28)]"
+                onClick={() => router.push(`/jobs/${job.id}`)}
+                className="cursor-pointer overflow-hidden rounded-xl border border-[#2E2E4A] bg-[#1A1A2E] shadow-sm transition-all hover:border-[#6C63FF]/40 hover:shadow-[0_8px_32px_rgba(0,0,0,0.28)]"
               >
                 <div className="p-4 sm:p-5">
                   <div className="flex gap-4">
@@ -424,6 +427,7 @@ export default function JobsPage() {
                             href={job.applyUrl}
                             target="_blank"
                             rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
                             className="inline-flex shrink-0 items-center gap-1.5 self-start rounded-lg border border-[#2E2E4A] bg-[#0F0F1A] px-3 py-1.5 text-xs font-medium text-[#B8B3FF] transition-colors hover:border-[#6C63FF]/50 hover:bg-[#6C63FF]/10"
                           >
                             <ExternalLink className="h-3.5 w-3.5" />
@@ -493,7 +497,7 @@ export default function JobsPage() {
                         <>
                           <button
                             type="button"
-                            onClick={() => handleSave(job.id)}
+                            onClick={(e) => { e.stopPropagation(); handleSave(job.id); }}
                             className="inline-flex items-center gap-1.5 rounded-lg border border-[#2E2E4A] bg-[#0F0F1A] px-3 py-2 text-xs font-medium text-[#C8C8E0] transition-colors hover:border-[#6C63FF]/45 hover:text-[#F0F0FF]"
                           >
                             <Bookmark className="h-3.5 w-3.5" />
@@ -501,7 +505,7 @@ export default function JobsPage() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => handleSkip(job.id)}
+                            onClick={(e) => { e.stopPropagation(); handleSkip(job.id); }}
                             className="inline-flex items-center gap-1.5 rounded-lg border border-[#FF6B6B]/25 bg-transparent px-3 py-2 text-xs font-medium text-[#FF8A8A] transition-colors hover:bg-[#FF6B6B]/10"
                           >
                             <XCircle className="h-3.5 w-3.5" />
@@ -518,7 +522,7 @@ export default function JobsPage() {
                       <button
                         type="button"
                         disabled={applyingId === job.id}
-                        onClick={() => void handleRequestTailoredCv(job)}
+                        onClick={(e) => { e.stopPropagation(); void handleRequestTailoredCv(job); }}
                         className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#6C63FF] px-4 py-3 text-sm font-semibold text-white shadow-md transition-colors hover:bg-[#5A52E0] disabled:opacity-50 sm:py-2.5"
                       >
                         {applyingId === job.id ? (
@@ -551,7 +555,8 @@ export default function JobsPage() {
             return (
               <article
                 key={job.id}
-                className="flex h-full flex-col overflow-hidden rounded-xl border border-[#2E2E4A] bg-[#1A1A2E] shadow-sm transition-all hover:border-[#6C63FF]/40 hover:shadow-[0_8px_28px_rgba(0,0,0,0.25)]"
+                onClick={() => router.push(`/jobs/${job.id}`)}
+                className="cursor-pointer flex h-full flex-col overflow-hidden rounded-xl border border-[#2E2E4A] bg-[#1A1A2E] shadow-sm transition-all hover:border-[#6C63FF]/40 hover:shadow-[0_8px_28px_rgba(0,0,0,0.25)]"
               >
                 <div className="flex items-start justify-between gap-3 border-b border-[#2E2E4A]/60 bg-[#0F0F1A]/35 px-4 py-3">
                   <div className="flex min-w-0 items-center gap-3">
@@ -599,6 +604,7 @@ export default function JobsPage() {
                       href={job.applyUrl}
                       target="_blank"
                       rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
                       className="mt-3 inline-flex w-fit items-center gap-1 text-xs font-medium text-[#6C63FF] hover:text-[#8B84FF]"
                     >
                       View posting
@@ -626,7 +632,7 @@ export default function JobsPage() {
                     <button
                       type="button"
                       disabled={applyingId === job.id}
-                      onClick={() => void handleRequestTailoredCv(job)}
+                      onClick={(e) => { e.stopPropagation(); void handleRequestTailoredCv(job); }}
                       className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#6C63FF] px-3 py-2.5 text-xs font-semibold text-white shadow-md transition-colors hover:bg-[#5A52E0] disabled:opacity-50"
                     >
                       {applyingId === job.id ? (
@@ -660,7 +666,7 @@ export default function JobsPage() {
                         <>
                           <button
                             type="button"
-                            onClick={() => handleSave(job.id)}
+                            onClick={(e) => { e.stopPropagation(); handleSave(job.id); }}
                             className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg border border-[#2E2E4A] bg-[#0F0F1A] py-2 text-xs font-medium text-[#C8C8E0] transition-colors hover:border-[#6C63FF]/45"
                             title="Save for later"
                           >
@@ -669,7 +675,7 @@ export default function JobsPage() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => handleSkip(job.id)}
+                            onClick={(e) => { e.stopPropagation(); handleSkip(job.id); }}
                             className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg border border-[#FF6B6B]/25 py-2 text-xs font-medium text-[#FF8A8A] transition-colors hover:bg-[#FF6B6B]/10"
                             title="Not interested"
                           >

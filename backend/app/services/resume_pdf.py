@@ -8,8 +8,146 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+def generate_resume_pdf_reportlab(parsed_json: dict[str, Any]) -> Path | None:
+    """Render resume JSON to PDF using reportlab (no external dependencies)."""
+    try:
+        from reportlab.lib.pagesizes import letter
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.units import inch
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
+        from reportlab.lib.enums import TA_LEFT, TA_CENTER
+
+        pdf_path = Path(tempfile.mktemp(suffix=".pdf", prefix="resume_"))
+        doc = SimpleDocTemplate(str(pdf_path), pagesize=letter,
+                                leftMargin=0.75*inch, rightMargin=0.75*inch,
+                                topMargin=0.75*inch, bottomMargin=0.75*inch)
+
+        story = []
+        styles = getSampleStyleSheet()
+
+        # Custom styles
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=18,
+            textColor='#000000',
+            spaceAfter=6,
+            alignment=TA_CENTER,
+        )
+
+        heading_style = ParagraphStyle(
+            'CustomHeading',
+            parent=styles['Heading2'],
+            fontSize=13,
+            textColor='#000000',
+            spaceAfter=6,
+            spaceBefore=12,
+            borderWidth=0,
+            borderColor='#999999',
+            borderPadding=0,
+        )
+
+        normal_style = styles['Normal']
+
+        # Personal Info
+        personal = parsed_json.get("personal_info", {})
+        name = personal.get("name", "Candidate")
+        story.append(Paragraph(name, title_style))
+
+        contact_parts = []
+        if personal.get("email"):
+            contact_parts.append(personal["email"])
+        if personal.get("phone"):
+            contact_parts.append(personal["phone"])
+        if personal.get("location"):
+            contact_parts.append(personal["location"])
+
+        if contact_parts:
+            contact_text = " | ".join(contact_parts)
+            contact_style = ParagraphStyle('Contact', parent=normal_style,
+                                          fontSize=9, alignment=TA_CENTER)
+            story.append(Paragraph(contact_text, contact_style))
+            story.append(Spacer(1, 0.2*inch))
+
+        # Summary
+        summary = parsed_json.get("summary", "")
+        if summary:
+            story.append(Paragraph("Professional Summary", heading_style))
+            story.append(Paragraph(summary, normal_style))
+            story.append(Spacer(1, 0.1*inch))
+
+        # Experience
+        experiences = parsed_json.get("experience", [])
+        if experiences:
+            story.append(Paragraph("Experience", heading_style))
+            for exp in experiences:
+                title = exp.get("title", "")
+                company = exp.get("company", "")
+                start = exp.get("start_date", "")
+                end = exp.get("end_date", "Present") if not exp.get("current") else "Present"
+
+                job_title = f"<b>{title}</b> — {company}"
+                story.append(Paragraph(job_title, normal_style))
+
+                if start or end:
+                    dates = f"{start} – {end}"
+                    date_style = ParagraphStyle('Dates', parent=normal_style, fontSize=9, textColor='#666666')
+                    story.append(Paragraph(dates, date_style))
+
+                achievements = exp.get("achievements", [])
+                if achievements:
+                    for achievement in achievements:
+                        story.append(Paragraph(f"• {achievement}", normal_style))
+                elif exp.get("description"):
+                    story.append(Paragraph(exp["description"], normal_style))
+
+                story.append(Spacer(1, 0.1*inch))
+
+        # Education
+        education = parsed_json.get("education", [])
+        if education:
+            story.append(Paragraph("Education", heading_style))
+            for edu in education:
+                degree = edu.get("degree", "")
+                field = edu.get("field", "")
+                institution = edu.get("institution", "")
+                start = edu.get("start_date", "")
+                end = edu.get("end_date", "")
+
+                edu_text = f"<b>{degree} in {field}</b> — {institution}"
+                if start and end:
+                    edu_text += f" ({start}-{end})"
+                story.append(Paragraph(edu_text, normal_style))
+                story.append(Spacer(1, 0.05*inch))
+
+        # Skills
+        skills = parsed_json.get("skills", [])
+        if skills:
+            story.append(Paragraph("Skills", heading_style))
+            skills_text = ", ".join(skills)
+            story.append(Paragraph(skills_text, normal_style))
+            story.append(Spacer(1, 0.1*inch))
+
+        # Projects
+        projects = parsed_json.get("projects", [])
+        if projects:
+            story.append(Paragraph("Projects", heading_style))
+            for proj in projects:
+                name = proj.get("name", "")
+                desc = proj.get("description", "")
+                story.append(Paragraph(f"<b>{name}</b>: {desc}", normal_style))
+                story.append(Spacer(1, 0.05*inch))
+
+        doc.build(story)
+        return pdf_path
+
+    except Exception:
+        logger.error("Failed to generate resume PDF with reportlab", exc_info=True)
+        return None
+
+
 async def generate_resume_pdf_async(parsed_json: dict[str, Any]) -> Path | None:
-    """Ask the model for LaTeX, compile to PDF; fall back to HTML/WeasyPrint if LaTeX fails."""
+    """Ask the model for LaTeX, compile to PDF; fall back to reportlab if LaTeX fails."""
     from app.services.ai.service import ai_service
     from app.services.resume_latex import compile_latex_to_pdf
 
@@ -18,11 +156,11 @@ async def generate_resume_pdf_async(parsed_json: dict[str, Any]) -> Path | None:
         pdf_path = compile_latex_to_pdf(tex)
         if pdf_path and pdf_path.is_file():
             return pdf_path
-        logger.warning("LaTeX compile returned no PDF; falling back to HTML renderer")
+        logger.warning("LaTeX compile returned no PDF; falling back to reportlab renderer")
     except Exception:
-        logger.warning("LaTeX PDF generation failed; falling back to HTML renderer", exc_info=True)
+        logger.warning("LaTeX PDF generation failed; falling back to reportlab renderer", exc_info=True)
 
-    return generate_resume_pdf(parsed_json)
+    return generate_resume_pdf_reportlab(parsed_json)
 
 
 def generate_resume_pdf(parsed_json: dict[str, Any]) -> Path | None:

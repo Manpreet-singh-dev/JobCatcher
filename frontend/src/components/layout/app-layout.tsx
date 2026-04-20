@@ -21,6 +21,7 @@ const pageTitles: Record<string, string> = {
   "/applications": "My Applications",
   "/resumes": "Resume Manager",
   "/preferences": "Preferences",
+  "/profile": "Profile",
   "/tailor-cv": "CV from posting",
 };
 

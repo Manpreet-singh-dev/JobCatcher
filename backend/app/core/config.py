@@ -21,6 +21,7 @@ class Settings(BaseSettings):
 
     ANTHROPIC_API_KEY: Optional[str] = None
     OPENAI_API_KEY: Optional[str] = None
+    GROQ_API_KEY: Optional[str] = None
     SENDGRID_API_KEY: Optional[str] = None
     FROM_EMAIL: str = "noreply@jobcatcher.app"
 

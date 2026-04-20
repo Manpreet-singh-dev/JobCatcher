@@ -1,10 +1,12 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { User, Settings, LogOut, ChevronDown } from "lucide-react";
 import { cn, getInitials, generateGradient } from "@/lib/utils";
 import { useAppStore } from "@/lib/store";
+import { auth, users } from "@/lib/api";
 
 interface TopbarProps {
   title: string;
@@ -12,7 +14,32 @@ interface TopbarProps {
 }
 
 function Topbar({ title, className }: TopbarProps) {
-  const { user } = useAppStore();
+  const router = useRouter();
+  const { user, setUser } = useAppStore();
+
+  React.useEffect(() => {
+    let cancelled = false;
+    users
+      .getMe()
+      .then((me) => {
+        if (!cancelled) setUser(me);
+      })
+      .catch(() => {
+        /* keep existing store user if any */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [setUser]);
+
+  function handleLogout() {
+    // `auth.logout()` clears cookies synchronously first, then notifies the API.
+    // Navigate immediately so we never wait on the network to leave the app shell.
+    void auth.logout();
+    setUser(null);
+    router.replace("/login");
+    router.refresh();
+  }
 
   return (
     <header
@@ -45,34 +72,69 @@ function Topbar({ title, className }: TopbarProps) {
               align="end"
               sideOffset={8}
               className={cn(
-                "z-50 min-w-[200px] rounded-md border border-border bg-bg-secondary p-1.5 shadow-xl",
-                "animate-fade-in"
+                "z-[100] min-w-[220px] rounded-xl border border-[#2E2E4A] bg-[#1A1A2E] p-1.5 shadow-2xl",
+                "outline-none animate-fade-in"
               )}
             >
               {/* User info */}
-              <div className="px-2.5 py-2 mb-1.5">
-                <p className="text-sm font-medium text-text-primary">
+              <div className="mb-1 rounded-lg bg-[#0F0F1A] px-3 py-2.5">
+                <p className="text-sm font-medium text-[#F0F0FF]">
                   {user?.name || "User"}
                 </p>
-                <p className="text-xs text-text-muted">{user?.email || ""}</p>
+                <p className="truncate text-xs text-[#8888AA]">{user?.email || ""}</p>
               </div>
 
-              <DropdownMenu.Separator className="h-px bg-border my-1" />
+              <DropdownMenu.Separator className="my-1 h-px bg-[#2E2E4A]" />
 
-              <DropdownMenu.Item className="flex items-center gap-2.5 rounded-sm px-2.5 py-2 text-sm text-text-secondary outline-none cursor-pointer transition-colors hover:bg-bg-tertiary hover:text-text-primary">
-                <User className="h-4 w-4" />
+              <DropdownMenu.Item
+                className={cn(
+                  "flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm outline-none",
+                  "text-[#C8C8E0] transition-colors duration-150 ease-out",
+                  "hover:bg-[#252540] hover:text-[#F0F0FF]",
+                  "data-[highlighted]:bg-[#252540] data-[highlighted]:text-[#F0F0FF]",
+                  "data-[highlighted]:[&_svg]:text-[#B8B3FF]",
+                  "focus-visible:ring-2 focus-visible:ring-[#6C63FF]/40"
+                )}
+                onSelect={() => {
+                  router.push("/profile");
+                }}
+              >
+                <User className="h-4 w-4 shrink-0 text-[#8888AA]" />
                 Profile
               </DropdownMenu.Item>
 
-              <DropdownMenu.Item className="flex items-center gap-2.5 rounded-sm px-2.5 py-2 text-sm text-text-secondary outline-none cursor-pointer transition-colors hover:bg-bg-tertiary hover:text-text-primary">
-                <Settings className="h-4 w-4" />
+              <DropdownMenu.Item
+                className={cn(
+                  "flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm outline-none",
+                  "text-[#C8C8E0] transition-colors duration-150 ease-out",
+                  "hover:bg-[#252540] hover:text-[#F0F0FF]",
+                  "data-[highlighted]:bg-[#252540] data-[highlighted]:text-[#F0F0FF]",
+                  "data-[highlighted]:[&_svg]:text-[#B8B3FF]",
+                  "focus-visible:ring-2 focus-visible:ring-[#6C63FF]/40"
+                )}
+                onSelect={() => {
+                  router.push("/preferences");
+                }}
+              >
+                <Settings className="h-4 w-4 shrink-0 text-[#8888AA]" />
                 Settings
               </DropdownMenu.Item>
 
-              <DropdownMenu.Separator className="h-px bg-border my-1" />
+              <DropdownMenu.Separator className="my-1 h-px bg-[#2E2E4A]" />
 
-              <DropdownMenu.Item className="flex items-center gap-2.5 rounded-sm px-2.5 py-2 text-sm text-accent-warm outline-none cursor-pointer transition-colors hover:bg-accent-warm/10">
-                <LogOut className="h-4 w-4" />
+              <DropdownMenu.Item
+                className={cn(
+                  "flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm outline-none",
+                  "text-[#FF8A8A] transition-colors duration-150 ease-out",
+                  "hover:bg-[#3d1f24] hover:text-[#FFB4B4]",
+                  "data-[highlighted]:bg-[#3d1f24] data-[highlighted]:text-[#FFB4B4]",
+                  "focus-visible:ring-2 focus-visible:ring-[#FF6B6B]/35"
+                )}
+                onSelect={() => {
+                  handleLogout();
+                }}
+              >
+                <LogOut className="h-4 w-4 shrink-0" />
                 Logout
               </DropdownMenu.Item>
             </DropdownMenu.Content>

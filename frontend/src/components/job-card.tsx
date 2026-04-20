@@ -42,7 +42,8 @@ function JobCard({
   return (
     <Card
       variant="interactive"
-      className={cn("p-5", className)}
+      className={cn("p-5", onViewDetails && "cursor-pointer", className)}
+      onClick={onViewDetails}
     >
       <div className="flex items-start gap-4">
         {/* Company Logo / Initials Avatar */}
@@ -115,7 +116,10 @@ function JobCard({
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={onViewDetails}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onViewDetails();
+                  }}
                 >
                   <ExternalLink className="h-3.5 w-3.5" />
                   View Details
@@ -125,7 +129,10 @@ function JobCard({
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={onSkip}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSkip();
+                  }}
                 >
                   <X className="h-3.5 w-3.5" />
                   Skip
@@ -135,7 +142,10 @@ function JobCard({
                 <Button
                   variant="primary"
                   size="sm"
-                  onClick={onApprove}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onApprove();
+                  }}
                 >
                   <Check className="h-3.5 w-3.5" />
                   Approve & Apply
