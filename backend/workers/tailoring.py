@@ -22,18 +22,28 @@ def tailor_resume_for_job(
     user_id: str,
     job_id: str,
     match_analysis: dict[str, Any] | None = None,
+    job_data: dict[str, Any] | None = None,
 ):
     """Tailor a user's base resume for a job, store it, and email a PDF to the user."""
 
     async def _run():
         from app.models.application import Application
-        from app.models.job import Job
         from app.models.resume import Resume
         from app.models.user import User
         from app.services.ai.service import ai_service
 
         uid = uuid.UUID(user_id)
         jid = uuid.UUID(job_id)
+
+        if not job_data:
+            logger.error("No job_data provided for job %s", job_id)
+            return {"status": "error", "reason": "no_job_data"}
+
+        job_title = job_data.get("title", "Unknown")
+        job_company = job_data.get("company", "Unknown")
+        job_location = job_data.get("location") or "Not specified"
+        job_description = job_data.get("description") or "No description available"
+        job_required_skills = list(job_data.get("required_skills") or [])
 
         async with get_db() as db:
 
@@ -82,13 +92,6 @@ def tailor_resume_for_job(
                 await _mark_cv_preparing_failed()
                 return {"status": "error", "reason": "user_not_found"}
 
-            job_result = await db.execute(select(Job).where(Job.id == job_id))
-            job = job_result.scalar_one_or_none()
-            if not job:
-                logger.error("Job %s not found for tailoring", job_id)
-                await _mark_cv_preparing_failed()
-                return {"status": "error", "reason": "job_not_found"}
-
             resume_result = await db.execute(
                 select(Resume)
                 .where(Resume.user_id == user_id, Resume.is_base == True)
@@ -118,11 +121,11 @@ def tailor_resume_for_job(
                 try:
                     match_analysis = await ai_service.analyze_match_for_job_tailoring(
                         base_resume.parsed_json,
-                        job_title=job.title,
-                        company=job.company,
-                        location=job.location or "Not specified",
-                        job_description=job.description or "No description available",
-                        required_skills=list(job.required_skills or []),
+                        job_title=job_title,
+                        company=job_company,
+                        location=job_location,
+                        job_description=job_description,
+                        required_skills=job_required_skills,
                     )
                 except Exception:
                     logger.error("AI scoring failed for job %s (on-demand tailor)", job_id, exc_info=True)
@@ -133,11 +136,11 @@ def tailor_resume_for_job(
                 tailored_json = await ai_service.tailor_resume_json_for_job(
                     base_resume.parsed_json,
                     match_analysis,
-                    job_title=job.title,
-                    company=job.company,
-                    location=job.location or "Not specified",
-                    job_description=job.description or "No description available",
-                    required_skills=list(job.required_skills or []),
+                    job_title=job_title,
+                    company=job_company,
+                    location=job_location,
+                    job_description=job_description,
+                    required_skills=job_required_skills,
                 )
             except Exception:
                 logger.error("AI tailoring failed for job %s, user %s", job_id, user_id, exc_info=True)
@@ -181,7 +184,7 @@ def tailor_resume_for_job(
             tailored_resume = Resume(
                 id=uuid.uuid4(),
                 user_id=uid,
-                version_name=f"Tailored for {job.title} at {job.company}",
+                version_name=f"Tailored for {job_title} at {job_company}",
                 is_base=False,
                 parsed_json=tailored_json,
                 original_filename=base_resume.original_filename,

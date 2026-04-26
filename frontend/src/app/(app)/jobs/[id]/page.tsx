@@ -2,13 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Building2, MapPin, Clock, DollarSign, ExternalLink, Loader2, Mail } from "lucide-react";
+import { ArrowLeft, Building2, MapPin, Clock, DollarSign, ExternalLink, Loader2, Mail, Bookmark, BookmarkCheck } from "lucide-react";
 import { cn, formatRelativeTime, formatSalary, getInitials, generateGradient } from "@/lib/utils";
-import { jobs, ApiError } from "@/lib/api";
+import { jobs as jobsApi, ApiError } from "@/lib/api";
 
 interface BackendJob {
   id: string;
   source?: string | null;
+  source_job_id?: string | null;
   title: string;
   company: string;
   location?: string | null;
@@ -20,9 +21,21 @@ interface BackendJob {
   description?: string | null;
   required_skills?: string[] | null;
   preferred_skills?: string[] | null;
+  experience_required?: string | null;
   posted_date?: string | null;
   apply_url?: string | null;
   company_logo_url?: string | null;
+}
+
+const JOB_CACHE_KEY = "jobcatcher_job_cache";
+
+function getCachedJob(id: string): BackendJob | null {
+  try {
+    const cache = JSON.parse(sessionStorage.getItem(JOB_CACHE_KEY) || "{}");
+    return cache[id] || null;
+  } catch {
+    return null;
+  }
 }
 
 function normalizeWorkMode(workMode?: string | null): string {
@@ -47,6 +60,29 @@ function workModePillClass(mode: string): string {
   }
 }
 
+function backendJobPayload(raw: BackendJob): Record<string, unknown> {
+  return {
+    id: raw.id,
+    source: raw.source ?? "",
+    source_job_id: raw.source_job_id ?? null,
+    title: raw.title,
+    company: raw.company,
+    company_logo_url: raw.company_logo_url ?? null,
+    location: raw.location ?? null,
+    work_mode: raw.work_mode ?? null,
+    employment_type: raw.employment_type ?? null,
+    salary_min: raw.salary_min ?? null,
+    salary_max: raw.salary_max ?? null,
+    salary_currency: raw.salary_currency ?? null,
+    description: raw.description ?? null,
+    required_skills: raw.required_skills ?? null,
+    preferred_skills: raw.preferred_skills ?? null,
+    experience_required: raw.experience_required ?? null,
+    apply_url: raw.apply_url ?? null,
+    posted_date: raw.posted_date ?? null,
+  };
+}
+
 export default function JobDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -55,13 +91,22 @@ export default function JobDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [applyingId, setApplyingId] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    const cached = getCachedJob(jobId);
+    if (cached) {
+      setJob(cached);
+      setLoading(false);
+      return;
+    }
+
     async function fetchJob() {
       setLoading(true);
       setError(null);
       try {
-        const response = await jobs.getById(jobId);
+        const response = await jobsApi.getById(jobId);
         setJob(response as unknown as BackendJob);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load job");
@@ -76,13 +121,31 @@ export default function JobDetailPage() {
     if (!job) return;
     setApplyingId(job.id);
     try {
-      await jobs.requestTailoredCv(job.id);
+      await jobsApi.requestTailoredCv(job.id, backendJobPayload(job));
       alert("Tailored CV requested! You'll receive an email when it's ready.");
     } catch (err: unknown) {
       const msg = err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err);
       alert("Could not queue tailored CV: " + msg);
     } finally {
       setApplyingId(null);
+    }
+  }
+
+  async function handleSave() {
+    if (!job) return;
+    setSaving(true);
+    try {
+      await jobsApi.save(backendJobPayload(job));
+      setSaved(true);
+    } catch (err: unknown) {
+      const msg = err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err);
+      if (msg.includes("already saved")) {
+        setSaved(true);
+      } else {
+        alert("Could not save job: " + msg);
+      }
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -208,6 +271,26 @@ export default function JobDetailPage() {
               View Original Posting
             </a>
           )}
+          <button
+            type="button"
+            disabled={saving}
+            onClick={handleSave}
+            className={cn(
+              "inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors",
+              saved
+                ? "border-[#6C63FF]/30 bg-[#6C63FF]/10 text-[#B8B3FF]"
+                : "border-[#2E2E4A] bg-[#0F0F1A] text-[#C8C8E0] hover:border-[#6C63FF]/45 hover:text-[#F0F0FF]"
+            )}
+          >
+            {saving ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : saved ? (
+              <BookmarkCheck className="h-4 w-4" />
+            ) : (
+              <Bookmark className="h-4 w-4" />
+            )}
+            {saved ? "Saved" : "Save for later"}
+          </button>
           <button
             type="button"
             disabled={applyingId === job.id}

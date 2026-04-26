@@ -10,7 +10,7 @@ from app.schemas.application import (
     ApplicationResponse,
     ApplicationUpdate,
 )
-from app.schemas.job import JobFilters, JobListResponse, JobResponse
+from app.schemas.job import JobFilters, JobListResponse, JobResponse, JobSaveRequest, SavedJobResponse
 from app.schemas.preference import PreferenceCreate, PreferenceResponse, PreferenceUpdate
 from app.schemas.resume import ParsedResumeData, ResumeResponse, ResumeUploadResponse
 from app.schemas.user import (
@@ -36,6 +36,8 @@ __all__ = [
     "JobResponse",
     "JobListResponse",
     "JobFilters",
+    "JobSaveRequest",
+    "SavedJobResponse",
     "ApplicationResponse",
     "ApplicationUpdate",
     "ApplicationListResponse",

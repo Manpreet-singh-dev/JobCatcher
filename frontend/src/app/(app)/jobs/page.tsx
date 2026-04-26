@@ -19,9 +19,10 @@ import {
   Mail,
   ExternalLink,
   DollarSign,
+  BookmarkCheck,
 } from "lucide-react";
 import { cn, formatRelativeTime, formatSalary, getInitials, generateGradient } from "@/lib/utils";
-import { jobs, ApiError } from "@/lib/api";
+import { jobs as jobsApi, ApiError } from "@/lib/api";
 
 interface Job {
   id: string;
@@ -38,21 +39,25 @@ interface Job {
   description: string;
   applyUrl: string;
   status: "new" | "pending" | "cv_requested" | "saved" | "skipped";
+  raw: BackendJob;
 }
 
 interface BackendJob {
   id: string;
   source?: string | null;
+  source_job_id?: string | null;
   title: string;
   company: string;
   location?: string | null;
   work_mode?: string | null;
+  employment_type?: string | null;
   salary_min?: number | null;
   salary_max?: number | null;
   salary_currency?: string | null;
   description?: string | null;
   required_skills?: string[] | null;
   preferred_skills?: string[] | null;
+  experience_required?: string | null;
   posted_date?: string | null;
   apply_url?: string | null;
   company_logo_url?: string | null;
@@ -61,6 +66,18 @@ interface BackendJob {
 const SOURCES = ["All Sources", "LinkedIn", "Indeed", "Glassdoor", "ZipRecruiter", "Company Sites"];
 const WORK_MODES = ["All Modes", "Remote", "Hybrid", "On-site"];
 const SORT_OPTIONS = ["Date Posted", "Salary (High)", "Salary (Low)"];
+
+const JOB_CACHE_KEY = "jobcatcher_job_cache";
+
+function cacheJob(job: BackendJob) {
+  try {
+    const cache = JSON.parse(sessionStorage.getItem(JOB_CACHE_KEY) || "{}");
+    cache[job.id] = job;
+    sessionStorage.setItem(JOB_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    // ignore quota errors
+  }
+}
 
 function workModePillClass(mode: string): string {
   switch (mode) {
@@ -136,26 +153,50 @@ function normalizeWorkMode(workMode?: string | null): string {
   return workMode;
 }
 
-function mapApiJobToView(job: BackendJob): Job {
-  const tags = [...(job.required_skills ?? []), ...(job.preferred_skills ?? [])]
+function mapApiJobToView(backendJob: BackendJob): Job {
+  const tags = [...(backendJob.required_skills ?? []), ...(backendJob.preferred_skills ?? [])]
     .filter(Boolean)
     .slice(0, 5);
-  const postedAgo = job.posted_date ? formatRelativeTime(job.posted_date) : "Recently";
+  const postedAgo = backendJob.posted_date ? formatRelativeTime(backendJob.posted_date) : "Recently";
   return {
-    id: String(job.id),
-    title: job.title,
-    company: job.company,
-    companyLogoUrl: job.company_logo_url?.trim() || null,
-    location: job.location ?? "Location not specified",
-    workMode: normalizeWorkMode(job.work_mode),
-    salary: formatSalary(job.salary_min ?? undefined, job.salary_max ?? undefined, job.salary_currency ?? "USD"),
-    postedAtMs: postedDateToMs(job.posted_date),
+    id: String(backendJob.id),
+    title: backendJob.title,
+    company: backendJob.company,
+    companyLogoUrl: backendJob.company_logo_url?.trim() || null,
+    location: backendJob.location ?? "Location not specified",
+    workMode: normalizeWorkMode(backendJob.work_mode),
+    salary: formatSalary(backendJob.salary_min ?? undefined, backendJob.salary_max ?? undefined, backendJob.salary_currency ?? "USD"),
+    postedAtMs: postedDateToMs(backendJob.posted_date),
     postedAgo,
-    source: normalizeSource(job.source),
+    source: normalizeSource(backendJob.source),
     tags,
-    description: job.description ?? "No description provided.",
-    applyUrl: job.apply_url ?? "",
+    description: backendJob.description ?? "No description provided.",
+    applyUrl: backendJob.apply_url ?? "",
     status: "new",
+    raw: backendJob,
+  };
+}
+
+function backendJobPayload(raw: BackendJob): Record<string, unknown> {
+  return {
+    id: raw.id,
+    source: raw.source ?? "",
+    source_job_id: raw.source_job_id ?? null,
+    title: raw.title,
+    company: raw.company,
+    company_logo_url: raw.company_logo_url ?? null,
+    location: raw.location ?? null,
+    work_mode: raw.work_mode ?? null,
+    employment_type: raw.employment_type ?? null,
+    salary_min: raw.salary_min ?? null,
+    salary_max: raw.salary_max ?? null,
+    salary_currency: raw.salary_currency ?? null,
+    description: raw.description ?? null,
+    required_skills: raw.required_skills ?? null,
+    preferred_skills: raw.preferred_skills ?? null,
+    experience_required: raw.experience_required ?? null,
+    apply_url: raw.apply_url ?? null,
+    posted_date: raw.posted_date ?? null,
   };
 }
 
@@ -176,13 +217,13 @@ export default function JobsPage() {
   const [modeFilter, setModeFilter] = useState("All Modes");
   const [sortBy, setSortBy] = useState("Date Posted");
   const [applyingId, setApplyingId] = useState<string | null>(null);
+  const [savingId, setSavingId] = useState<string | null>(null);
   const [actionedJobs, setActionedJobs] = useState<Record<string, "cv_requested" | "skipped" | "saved">>({});
-  const [matchMyPreferences, setMatchMyPreferences] = useState(false);
 
   async function handleRequestTailoredCv(job: Job) {
     setApplyingId(job.id);
     try {
-      await jobs.requestTailoredCv(job.id);
+      await jobsApi.requestTailoredCv(job.id, backendJobPayload(job.raw));
       setActionedJobs((prev) => ({ ...prev, [job.id]: "cv_requested" }));
     } catch (err: unknown) {
       const msg = err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err);
@@ -196,8 +237,21 @@ export default function JobsPage() {
     setActionedJobs((prev) => ({ ...prev, [jobId]: "skipped" }));
   }
 
-  function handleSave(jobId: string) {
-    setActionedJobs((prev) => ({ ...prev, [jobId]: "saved" }));
+  async function handleSave(job: Job) {
+    setSavingId(job.id);
+    try {
+      await jobsApi.save(backendJobPayload(job.raw));
+      setActionedJobs((prev) => ({ ...prev, [job.id]: "saved" }));
+    } catch (err: unknown) {
+      const msg = err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err);
+      if (msg.includes("already saved")) {
+        setActionedJobs((prev) => ({ ...prev, [job.id]: "saved" }));
+      } else {
+        alert("Could not save job: " + msg);
+      }
+    } finally {
+      setSavingId(null);
+    }
   }
 
   function getJobStatus(job: Job): Job["status"] {
@@ -223,13 +277,13 @@ export default function JobsPage() {
               ? "onsite"
               : modeFilter.toLowerCase();
 
-        const response = await jobs.list({
+        const response = await jobsApi.list({
           page,
           page_size: PER_PAGE,
           search: search || undefined,
           source,
           work_mode: workMode as "remote" | "hybrid" | "onsite" | undefined,
-          apply_preferences: matchMyPreferences,
+          apply_preferences: true,
         });
 
         const items = ((response as unknown as { items?: BackendJob[]; data?: BackendJob[] }).items ??
@@ -237,6 +291,11 @@ export default function JobsPage() {
           []) as BackendJob[];
 
         if (cancelled) return;
+
+        for (const item of items) {
+          cacheJob(item);
+        }
+
         setAllJobs(items.map(mapApiJobToView));
         setTotal((response as unknown as { total?: number }).total ?? items.length);
         setServerPage((response as unknown as { page?: number }).page ?? page);
@@ -255,11 +314,11 @@ export default function JobsPage() {
     return () => {
       cancelled = true;
     };
-  }, [page, search, sourceFilter, modeFilter, matchMyPreferences]);
+  }, [page, search, sourceFilter, modeFilter]);
 
   const filtered = useMemo(() => {
-    const jobs = [...allJobs];
-    jobs.sort((a, b) => {
+    const items = [...allJobs];
+    items.sort((a, b) => {
       switch (sortBy) {
         case "Date Posted":
           return b.postedAtMs - a.postedAtMs;
@@ -271,7 +330,7 @@ export default function JobsPage() {
           return 0;
       }
     });
-    return jobs;
+    return items;
   }, [allJobs, sortBy]);
 
   const paged = filtered;
@@ -295,9 +354,17 @@ export default function JobsPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-[#F0F0FF]">Jobs Feed</h1>
-          <p className="text-sm text-[#8888AA]">{total} jobs found</p>
+          <p className="text-sm text-[#8888AA]">{total} jobs found — live from job boards</p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => router.push("/jobs?tab=saved")}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-[#2E2E4A] bg-[#0F0F1A] px-3 py-2 text-xs font-medium text-[#B8B3FF] transition-colors hover:border-[#6C63FF]/50 hover:bg-[#6C63FF]/10"
+          >
+            <BookmarkCheck className="h-3.5 w-3.5" />
+            Saved Jobs
+          </button>
           <div className="flex rounded-lg border border-[#2E2E4A] bg-[#1A1A2E]">
             <button
               onClick={() => setView("list")}
@@ -354,19 +421,6 @@ export default function JobsPage() {
           ))}
         </select>
 
-        <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-[#2E2E4A] bg-[#0F0F1A] px-3 py-2 text-sm text-[#8888AA] hover:border-[#6C63FF]/50">
-          <input
-            type="checkbox"
-            checked={matchMyPreferences}
-            onChange={(e) => {
-              setMatchMyPreferences(e.target.checked);
-              setPage(1);
-            }}
-            className="rounded border-[#2E2E4A] bg-[#1A1A2E] text-[#6C63FF] focus:ring-[#6C63FF]"
-          />
-          <span>Match my preferences</span>
-        </label>
-
         <select
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value)}
@@ -384,7 +438,6 @@ export default function JobsPage() {
             setSourceFilter("All Sources");
             setModeFilter("All Modes");
             setSortBy("Date Posted");
-            setMatchMyPreferences(false);
             setPage(1);
           }}
           className="flex items-center gap-1 rounded-lg border border-[#2E2E4A] px-3 py-2 text-sm text-[#8888AA] transition-colors hover:border-[#FF6B6B]/30 hover:text-[#FF8A8A]"
@@ -407,7 +460,10 @@ export default function JobsPage() {
             return (
               <article
                 key={job.id}
-                onClick={() => router.push(`/jobs/${job.id}`)}
+                onClick={() => {
+                  cacheJob(job.raw);
+                  router.push(`/jobs/${job.id}`);
+                }}
                 className="cursor-pointer overflow-hidden rounded-xl border border-[#2E2E4A] bg-[#1A1A2E] shadow-sm transition-all hover:border-[#6C63FF]/40 hover:shadow-[0_8px_32px_rgba(0,0,0,0.28)]"
               >
                 <div className="p-4 sm:p-5">
@@ -485,8 +541,8 @@ export default function JobsPage() {
                     <div className="flex flex-wrap gap-2">
                       {rowStatus === "saved" ? (
                         <span className="inline-flex items-center gap-1.5 rounded-lg bg-[#6C63FF]/10 px-3 py-2 text-xs font-medium text-[#B8B3FF]">
-                          <Bookmark className="h-3.5 w-3.5" />
-                          Saved for later
+                          <BookmarkCheck className="h-3.5 w-3.5" />
+                          Saved
                         </span>
                       ) : rowStatus === "skipped" ? (
                         <span className="inline-flex items-center gap-1.5 rounded-lg bg-[#252540] px-3 py-2 text-xs font-medium text-[#8888AA]">
@@ -497,10 +553,15 @@ export default function JobsPage() {
                         <>
                           <button
                             type="button"
-                            onClick={(e) => { e.stopPropagation(); handleSave(job.id); }}
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-[#2E2E4A] bg-[#0F0F1A] px-3 py-2 text-xs font-medium text-[#C8C8E0] transition-colors hover:border-[#6C63FF]/45 hover:text-[#F0F0FF]"
+                            disabled={savingId === job.id}
+                            onClick={(e) => { e.stopPropagation(); void handleSave(job); }}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-[#2E2E4A] bg-[#0F0F1A] px-3 py-2 text-xs font-medium text-[#C8C8E0] transition-colors hover:border-[#6C63FF]/45 hover:text-[#F0F0FF] disabled:opacity-50"
                           >
-                            <Bookmark className="h-3.5 w-3.5" />
+                            {savingId === job.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Bookmark className="h-3.5 w-3.5" />
+                            )}
                             Save for later
                           </button>
                           <button
@@ -555,7 +616,10 @@ export default function JobsPage() {
             return (
               <article
                 key={job.id}
-                onClick={() => router.push(`/jobs/${job.id}`)}
+                onClick={() => {
+                  cacheJob(job.raw);
+                  router.push(`/jobs/${job.id}`);
+                }}
                 className="cursor-pointer flex h-full flex-col overflow-hidden rounded-xl border border-[#2E2E4A] bg-[#1A1A2E] shadow-sm transition-all hover:border-[#6C63FF]/40 hover:shadow-[0_8px_28px_rgba(0,0,0,0.25)]"
               >
                 <div className="flex items-start justify-between gap-3 border-b border-[#2E2E4A]/60 bg-[#0F0F1A]/35 px-4 py-3">
@@ -654,7 +718,7 @@ export default function JobsPage() {
                     <div className="flex gap-2">
                       {cardStatus === "saved" ? (
                         <span className="flex w-full items-center justify-center gap-1 rounded-lg bg-[#6C63FF]/10 py-2 text-xs font-medium text-[#B8B3FF]">
-                          <Bookmark className="h-3.5 w-3.5" />
+                          <BookmarkCheck className="h-3.5 w-3.5" />
                           Saved
                         </span>
                       ) : cardStatus === "skipped" ? (
@@ -666,11 +730,16 @@ export default function JobsPage() {
                         <>
                           <button
                             type="button"
-                            onClick={(e) => { e.stopPropagation(); handleSave(job.id); }}
-                            className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg border border-[#2E2E4A] bg-[#0F0F1A] py-2 text-xs font-medium text-[#C8C8E0] transition-colors hover:border-[#6C63FF]/45"
+                            disabled={savingId === job.id}
+                            onClick={(e) => { e.stopPropagation(); void handleSave(job); }}
+                            className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg border border-[#2E2E4A] bg-[#0F0F1A] py-2 text-xs font-medium text-[#C8C8E0] transition-colors hover:border-[#6C63FF]/45 disabled:opacity-50"
                             title="Save for later"
                           >
-                            <Bookmark className="h-3.5 w-3.5" />
+                            {savingId === job.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Bookmark className="h-3.5 w-3.5" />
+                            )}
                             Save
                           </button>
                           <button

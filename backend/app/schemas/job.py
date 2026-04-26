@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class JobResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    id: uuid.UUID
+    id: str
     source: str
     source_job_id: Optional[str] = None
     title: str
@@ -25,8 +25,7 @@ class JobResponse(BaseModel):
     preferred_skills: Optional[list[str]] = None
     experience_required: Optional[str] = None
     apply_url: Optional[str] = None
-    posted_date: Optional[datetime] = None
-    scraped_at: datetime
+    posted_date: Optional[str] = None
     is_active: bool = True
 
 
@@ -50,3 +49,50 @@ class JobFilters(BaseModel):
     is_active: Optional[bool] = True
     page: int = Field(default=1, ge=1)
     page_size: int = Field(default=20, ge=1, le=100)
+
+
+class JobSaveRequest(BaseModel):
+    """Full job data sent from the frontend to persist a saved job."""
+    id: str
+    source: str = ""
+    source_job_id: Optional[str] = None
+    title: str
+    company: str
+    company_logo_url: Optional[str] = None
+    location: Optional[str] = None
+    work_mode: Optional[str] = None
+    employment_type: Optional[str] = None
+    salary_min: Optional[int] = None
+    salary_max: Optional[int] = None
+    salary_currency: Optional[str] = None
+    description: Optional[str] = None
+    required_skills: Optional[list[str]] = None
+    preferred_skills: Optional[list[str]] = None
+    experience_required: Optional[str] = None
+    apply_url: Optional[str] = None
+    posted_date: Optional[str] = None
+
+
+class SavedJobResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    user_id: uuid.UUID
+    source: str
+    source_job_id: Optional[str] = None
+    title: str
+    company: str
+    company_logo_url: Optional[str] = None
+    location: Optional[str] = None
+    work_mode: Optional[str] = None
+    employment_type: Optional[str] = None
+    salary_min: Optional[int] = None
+    salary_max: Optional[int] = None
+    salary_currency: Optional[str] = None
+    description: Optional[str] = None
+    required_skills: Optional[list[str]] = None
+    preferred_skills: Optional[list[str]] = None
+    experience_required: Optional[str] = None
+    apply_url: Optional[str] = None
+    posted_date: Optional[datetime] = None
+    saved_at: datetime

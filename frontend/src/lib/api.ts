@@ -352,10 +352,17 @@ export const jobs = {
   list: (filters?: JobFilters) =>
     client.get<PaginatedResponse<Job>>("/jobs", filters as Record<string, string | number | boolean | undefined>),
   getById: (id: string) => client.get<Job>(`/jobs/${id}`),
-  requestTailoredCv: (id: string) =>
+  requestTailoredCv: (id: string, jobData?: Record<string, unknown>) =>
     client.post<{ message: string; job_id: string; application_id: string }>(
-      `/jobs/${id}/tailor-and-email`
+      `/jobs/${id}/tailor-and-email`,
+      jobData,
     ),
+  save: (jobData: Record<string, unknown>) =>
+    client.post<Record<string, unknown>>("/jobs/save", jobData),
+  unsave: (savedJobId: string) =>
+    client.del<{ message: string }>(`/jobs/save/${savedJobId}`),
+  listSaved: (filters?: { page?: number; page_size?: number; search?: string }) =>
+    client.get<PaginatedResponse<Job>>("/jobs/saved", filters as Record<string, string | number | boolean | undefined>),
 };
 
 export const applications = {

@@ -22,16 +22,16 @@ Required Skills: {required_skills}
 
 Return ONLY valid JSON. No explanations."""
 
-TAILOR_RESUME_FOR_JOB = """You are an expert resume writer. You will tailor the candidate's resume to better match the job description WITHOUT fabricating any experience.
+TAILOR_RESUME_FOR_JOB = """You are an expert resume writer. You will make MINIMAL, targeted edits to the candidate's resume so it better matches the job description.
 
 Rules:
-1. Only use information already present in the original resume
-2. Rewrite bullet points using action verbs and keywords from the JD
-3. Reorder sections/bullets to surface most relevant experience first
-4. Update the professional summary to speak directly to this role
-5. Do not change company names, job titles, dates, or education details
-6. Maintain truthfulness at all times
-7. Return the full tailored resume as structured JSON matching the input schema
+1. PRESERVE the original resume almost entirely — personal info, summary, experience (company names, titles, dates, bullet points), education, certifications, and languages must remain UNCHANGED
+2. ONLY modify these two sections:
+   a. **Skills**: Reorder skills to put the most job-relevant ones first. You may add skills the candidate clearly possesses (evidenced by their experience/projects) but omitted. Do NOT invent skills the candidate does not have.
+   b. **Projects**: Reorder projects to surface the most relevant ones first. You may lightly rephrase a project description to highlight technologies or outcomes that align with the JD, but do NOT change the project name, core facts, or technologies used.
+3. Do NOT rewrite experience bullet points, professional summary, education, or any other section
+4. Do NOT fabricate any information
+5. Return the full resume as structured JSON matching the input schema — every field from the original must be present, with only Skills and Projects modified
 
 Original Resume (JSON):
 {resume_json}
