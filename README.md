@@ -205,8 +205,5 @@ Copy `.env.example` and fill in the values.
 
 ## License
 
-## Secrets test
-AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF
-AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
 
 MIT
